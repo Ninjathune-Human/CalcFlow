@@ -12,7 +12,7 @@ Calculatrice à feuille libre, dans l'esprit de Tydlig, à l'allure de la Calcul
 - **Cellules liées** : on glisse un résultat dans un autre calcul. Les liens prennent la couleur de la cellule ; modifier la source recalcule toute la chaîne, chiffre après chiffre.
 - **Calcul entre cellules** : on sélectionne une cellule, on appuie sur une opération, on approche une seconde cellule, puis `=`.
 - **Devises et cryptos** : un appui long sur une cellule crée sa conversion, liée à la source. Taux en direct, avec un jeu de taux intégré hors ligne.
-- **Partout** : clavier à 50 % de l'écran sur iPhone, clavier scientifique sur iPad, clavier à droite en paysage, clavier physique sur ordinateur. Tactile, stylet et souris.
+- **Partout** : clavier sur 40 % de l'écran sur iPhone et sur un tiers sur iPad, fonctions scientifiques dépliables (touche fx), clavier à droite en paysage, clavier physique sur ordinateur. Tactile, stylet et souris.
 - **Sauvegarde automatique** dans le navigateur, annulation pas à pas.
 
 ## Gestes

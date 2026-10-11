@@ -16,7 +16,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@200..600&display=swap">
 <style>
 /* CalcFlow : feuille de calcul libre façon Tydlig, habillage de la Calculatrice Apple.
-   Mise en page : feuille en haut, clavier capsule en bas (50 % de l'écran) ; clavier à droite en paysage. */
+   Mise en page : feuille en haut, clavier capsule en bas (40 % de l'écran sur iPhone, 33 % sur iPad) ; clavier à droite en paysage. */
 :root{
   color-scheme:dark;
   --bg:#000;
@@ -38,9 +38,10 @@ button{font:inherit;color:inherit}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 /* ---------- Structure ---------- */
-#app{height:100%;display:grid;grid-template:"bar" auto "canvas" minmax(0,1fr) "kbd" 50% / minmax(0,1fr);
+#app{height:100%;display:grid;grid-template:"bar" auto "canvas" minmax(0,1fr) "kbd" 40% / minmax(0,1fr);
   padding-inline:env(safe-area-inset-left,0px) env(safe-area-inset-right,0px)}
-body.regular:not(.side) #app{grid-template-rows:auto minmax(0,1fr) 55%}
+body.regular:not(.side) #app{grid-template-rows:auto minmax(0,1fr) 33%}
+body.regular.fxopen:not(.side) #app{grid-template-rows:auto minmax(0,1fr) auto} /* volet fx : le clavier grandit, la feuille se réduit */
 body.side #app{grid-template:"bar kbd" auto "canvas kbd" minmax(0,1fr) / minmax(0,1fr) var(--kw)}
 
 .bar{grid-area:bar;display:flex;align-items:center;justify-content:space-between;padding:6px 16px 2px}
@@ -99,7 +100,8 @@ body.dragging,body.dragging *{cursor:grabbing!important}
 body.side #kbd{padding:12px 16px 16px 6px}
 .grid{display:grid;gap:var(--g,12px)}
 .grid.main{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(5,var(--rh,64px))}
-.grid.fx{grid-template-columns:repeat(6,minmax(0,1fr));grid-template-rows:repeat(3,var(--rh,64px))}
+.grid.fx{grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(4,var(--rh,64px))}
+.grid.fx .key[data-k="cur"]{grid-column:span 2}
 .grid.swap{animation:fade .16s var(--ease)}
 @keyframes fade{from{opacity:.25}}
 .key{container-type:size;position:relative;min-width:0;min-height:0;padding:0;border:0;border-radius:999px;display:grid;place-items:center;
@@ -119,6 +121,9 @@ body.side #kbd{padding:12px 16px 16px 6px}
 .key sup{position:relative;top:-.05em}
 .key svg{display:block;width:1.15em;height:1.15em}
 .key[data-k="deg"]>span{color:var(--k-op)}
+.key.num:not([data-k="layer"])>span,.key.op>span{font-weight:600} /* chiffres et opérations de base en gras */
+.key .chev{display:inline-block;width:.62em;height:.62em;margin-left:.18em;vertical-align:.06em;stroke-width:2.4;transition:transform .3s var(--spring)}
+.key.open .chev{transform:rotate(180deg)}
 .pm{letter-spacing:-.06em}
 /* ⌫ glissé vers la gauche : la touche s'efface comme un volet et découvre l'effacement de toute la feuille */
 .key.swipe{overflow:hidden;touch-action:none}
@@ -1402,6 +1407,7 @@ function endDrag() {
 const IC = {
   back:'<svg class="i" viewBox="0 0 24 24"><path d="M20.5 5.5H9.2a1 1 0 0 0-.75.34L3 12l5.45 6.16a1 1 0 0 0 .75.34h11.3a1 1 0 0 0 1-1v-11a1 1 0 0 0-1-1z"/><path d="m16.5 9-6 6M10.5 9l6 6"/></svg>',
   check:'<svg class="i" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
+  chev:'<svg class="i chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg>',
   bin:'<svg class="i bin" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5h17"/><path d="M9 6.5V4.5h6v2"/><path d="m18.5 6.5-.9 13a1 1 0 0 1-1 .9H7.4a1 1 0 0 1-1-.9l-.9-13"/><path d="M10 11v5.5M14 11v5.5"/></svg>'
 };
 const KD = {
@@ -1417,7 +1423,7 @@ const KD = {
 };
 for (let i = 0; i < 10; i++) KD['d' + i] = ['num', String(i), String(i)];
 const MAIN = ['back','paren','pct','div','d7','d8','d9','mul','d4','d5','d6','sub','d1','d2','d3','add','layer','d0','dec','eq'];
-const FX6 = ['sin','cos','tan','deg','pi','e','sq','pow','sqrt','cbrt','inv','fact','ln','log','exp','tenx','mod','cur'];
+const FX5 = ['sin','cos','tan','deg','neg','sq','pow','sqrt','cbrt','inv','ln','log','exp','tenx','fact','pi','e','mod','cur']; // iPad : volet déployé par fx
 const FX4 = ['sin','cos','tan','deg','sq','pow','sqrt','cbrt','inv','fact','pi','e','ln','log','exp','tenx','layer','neg','mod','cur'];
 const degLabel = () => S.angle === 'deg' ? 'Deg' : 'Rad';
 function grid(cls, ids) {
@@ -1425,9 +1431,10 @@ function grid(cls, ids) {
   for (const id of ids) {
     const d = KD[id], b = document.createElement('button');
     b.type = 'button'; b.className = 'key ' + d[0]; b.dataset.k = id; b.setAttribute('aria-label', d[2]);
-    const label = id === 'deg' ? degLabel() : id === 'layer' ? (layer === 'fx' ? '123' : '<i>f</i>x') : d[1];
+    const label = id === 'deg' ? degLabel() : id === 'layer' ? (compact ? (layer === 'fx' ? '123' : '<i>f</i>x') : '<i>f</i>x' + IC.chev) : d[1];
     b.innerHTML = (id === 'back' ? IC.bin : '') + '<span>' + label + '</span>';
     if (id === 'back') b.classList.add('swipe');
+    if (id === 'layer' && !compact) { b.classList.toggle('open', layer === 'fx'); b.setAttribute('aria-expanded', layer === 'fx'); } // encoche : déployé ou replié
     g.appendChild(b);
   }
   kbd.appendChild(g);
@@ -1436,7 +1443,7 @@ function grid(cls, ids) {
 function buildKeys(anim) {
   kbd.innerHTML = '';
   if (compact) { const g = grid('main', layer === 'fx' ? FX4 : MAIN); if (anim) g.classList.add('swap'); }
-  else { grid('fx', FX6); grid('main', MAIN.map(k => k === 'layer' ? 'neg' : k)); }
+  else { if (layer === 'fx') { const g = grid('fx', FX5); if (anim) g.classList.add('swap'); } grid('main', MAIN); }
 }
 function syncDeg() { const s = kbd.querySelector('[data-k="deg"] span'); if (s) s.textContent = degLabel(); }
 /* Une cellule sélectionnée puis une opération : un nouveau calcul part de cette cellule ;
@@ -1478,7 +1485,7 @@ function act_(id) {
   }
 }
 function pressKey(id) {
-  if (id === 'layer') { layer = layer === 'fx' ? 'num' : 'fx'; buildKeys(true); return; }
+  if (id === 'layer') { layer = layer === 'fx' ? 'num' : 'fx'; buildKeys(true); if (!compact) layout(); return; } // iPad : la hauteur des touches suit le volet
   act_(id);
   if (compact && layer === 'fx' && id !== 'deg') { layer = 'num'; buildKeys(true); }
 }
@@ -1797,19 +1804,22 @@ function layout() {
   const w = innerWidth, h = innerHeight;
   const c = w < 600 || h < 560, s = w > h * 1.15 && w >= 640;
   const changed = c !== compact || s !== side;
+  if (c !== compact) layer = 'num';
   compact = c; side = s;
   const cl = document.body.classList;
   cl.toggle('compact', c); cl.toggle('regular', !c); cl.toggle('side', s);
   document.body.style.setProperty('--kw', s ? (c ? '50%' : Math.round(Math.min(600, Math.max(420, w * .45))) + 'px') : '0px');
-  if (!c) layer = 'num';
   if (changed) buildKeys();
   sheet.style.setProperty('--fs', (c ? 30 : Math.round(Math.max(36, Math.min(46, Math.min(w, h) * .048)))) + 'px');
   const g = c ? 10 : 12;
   kbd.style.setProperty('--g', g + 'px');
-  const cs = getComputedStyle(kbd), rows = c ? 5 : 8;
-  const H = kbd.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const open = !c && layer === 'fx', cols = open ? 5 : 4; // iPad : 5 rangées, 9 avec le volet fx
+  cl.toggle('fxopen', open);
+  const cs = getComputedStyle(kbd), pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  const port = !c && !s, rows = open && !port ? 9 : 5; // iPad portrait : touches réglées sur le tiers d'écran, le volet s'ajoute au-dessus
+  const H = (port ? h * .33 : kbd.clientHeight) - pad;
   let rh = (H - (rows - 1) * g) / rows;
-  if (!c) { const W = kbd.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight); rh = Math.min(rh, (W - 5 * g) / 6 * .86); }
+  if (!c) { const W = kbd.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight); rh = Math.min(rh, (W - (cols - 1) * g) / cols * .86); }
   kbd.style.setProperty('--rh', Math.max(34, Math.floor(rh)) + 'px');
   net.resize();
   render();
