@@ -1434,15 +1434,36 @@ function inkScripts(sn, bb, H) { // groupes de traits en position haute, à droi
 }
 const needMul = (a, b) => /[\d)!π%]$/.test(a) && /^(sqrt\(|cbrt\(|sin\(|cos\(|tan\(|ln\(|log\(|π|\()/.test(b);
 const glue = (a, b) => needMul(a, b) ? a + '×' + b : a + b;
+const FSET = {sin:['sS5$', 'iIl1|j!', 'nNmMhHrRuU'], cos:['cCeE(', 'oO0aAQ', 'sS5$'], tan:['tTfF+1l', 'aAoOeEuU', 'nNmMhHrRuU'], log:['lLiI1|', 'oO0aAQ', 'gGqQ9'], ln:['lLiI1|', 'nN']};
+function fnAt(s, i) { // sin, cos, tan, log, ln, même mal lus (5in, tau, 1n, Sih...) ; au moins une vraie lettre pour ne pas prendre des chiffres
+  for (const f of ['sin', 'cos', 'tan', 'log', 'ln']) {
+    const set = FSET[f], sub = s.slice(i, i + set.length);
+    if (sub.length === set.length && [...sub].every((c, k) => set[k].includes(c)) && /[A-Za-z]/.test(sub)) return f;
+  }
+  return null;
+}
 function inkLeaf(t) { // texte reconnu -> alphabet du calcul ; compte ce qui a dû être écarté
-  let s = t.replace(/\s+/g, '').replace(/²/g, '^2').replace(/³/g, '^3');
-  s = s.replace(/(sin|cos|tan|ln|log)(?!\()(-?[\d.]+)/gi, (m, f, n) => f.toLowerCase() + '(' + n + ')').replace(/√(?!\()([\d.]+)/g, 'sqrt($1)').replace(/√\(/g, 'sqrt(');
-  const out = []; let dropped = 0;
-  for (const m of s.match(/sqrt\(|cbrt\(|sin\(|cos\(|tan\(|ln\(|log\(|π|Π|pi|./gi) || []) {
-    const w = m.toLowerCase();
-    if (m.length > 1 && w.endsWith('(')) out.push(w);
-    else if (w === 'π' || w === 'pi') out.push('π');
-    else { const ch = GLYPH[m] || m; if (/[0-9+−×÷().%=!^]/.test(ch)) out.push(ch); else dropped++; }
+  const s = t.replace(/\s+/g, '').replace(/²/g, '^2').replace(/³/g, '^3'), out = []; let dropped = 0;
+  for (let i = 0; i < s.length;) {
+    const f = fnAt(s, i);
+    if (f) {
+      i += FSET[f].length;
+      if (s[i] === '(') { i++; out.push(f + '('); continue; }
+      const m = s.slice(i).match(/^-?[\d.]+/);
+      if (m) { out.push(f + '(' + m[0].replace('-', '−') + ')'); i += m[0].length; } else out.push(f + '(');
+      continue;
+    }
+    if (s[i] === '√') {
+      i++;
+      const m = s[i] === '(' ? null : s.slice(i).match(/^[\d.]+/);
+      if (m) { out.push('sqrt(' + m[0] + ')'); i += m[0].length; } else { if (s[i] === '(') i++; out.push('sqrt('); }
+      continue;
+    }
+    if (s.slice(i, i + 2).toLowerCase() === 'pi') { out.push('π'); i += 2; continue; }
+    const c = s[i++];
+    if (c === 'π' || c === 'Π') { out.push('π'); continue; }
+    const ch = GLYPH[c] || c;
+    if (/[0-9+−×÷().%=!^]/.test(ch)) out.push(ch); else dropped++;
   }
   return {s:out.join(''), dropped};
 }
@@ -1450,6 +1471,29 @@ async function inkLeafReco(sn, signal) {
   let best = '';
   for (const t of await inkReco(sn, signal)) { const r = inkLeaf(t); if (/[\dπ]/.test(r.s) && !r.dropped) return r.s; if (!best && r.s) best = r.s; }
   return best;
+}
+function inkDivs(bb, H) { // ÷ (barre et deux points) ou : (deux points superposés) ; renvoie les signes trouvés, le plus à gauche d'abord
+  const tall = bb.filter(r => r.h >= .75 * H), top = tall.length ? Math.min(...tall.map(r => r.y0)) : 0;
+  const tiny = r => r.w <= .3 * H && r.h <= .3 * H, used = new Set(), out = [];
+  const alone = (ids, x0, x1) => !bb.some((o, k) => !ids.includes(k) && o.x0 < x1 && o.x1 > x0); // rien d'autre au-dessus ou en dessous
+  bb.forEach((b, i) => {
+    if (used.has(i) || b.h > .2 * b.w || b.w < .25 * H || b.w > .9 * H) return;
+    const near = (r, j, up) => j !== i && !used.has(j) && tiny(r) && r.cx >= b.x0 - .1 * H && r.cx <= b.x1 + .1 * H && (up ? b.cy - r.cy : r.cy - b.cy) > .06 * H && (up ? b.cy - r.cy : r.cy - b.cy) <= .7 * H;
+    const u = bb.findIndex((r, j) => near(r, j, true)), d = bb.findIndex((r, j) => j !== u && near(r, j, false));
+    if (u < 0 || d < 0) return;
+    const ids = [i, u, d], x0 = Math.min(...ids.map(k => bb[k].x0)), x1 = Math.max(...ids.map(k => bb[k].x1));
+    if (!alone(ids, x0, x1)) return;
+    ids.forEach(k => used.add(k)); out.push({ids, x0, x1, cx:b.cx});
+  });
+  bb.forEach((a, i) => {
+    if (used.has(i) || !tiny(a)) return;
+    const j = bb.findIndex((r, k) => k > i && !used.has(k) && tiny(r) && Math.abs(r.cx - a.cx) <= .2 * H && Math.abs(r.cy - a.cy) >= .3 * H && Math.abs(r.cy - a.cy) <= H);
+    if (j < 0) return;
+    const mid = (a.cy + bb[j].cy) / 2, ids = [i, j];
+    if (mid < top + .25 * H || mid > top + .75 * H || !alone(ids, Math.min(a.x0, bb[j].x0), Math.max(a.x1, bb[j].x1))) return;
+    ids.forEach(k => used.add(k)); out.push({ids, x0:Math.min(a.x0, bb[j].x0), x1:Math.max(a.x1, bb[j].x1), cx:(a.cx + bb[j].cx) / 2});
+  });
+  return out.sort((u, v) => u.cx - v.cx);
 }
 async function inkParse(sn, signal, depth = 0) {
   if (!sn.length) return '';
@@ -1465,6 +1509,16 @@ async function inkParse(sn, signal, depth = 0) {
       const n = ix.replace(/\D/g, '');
       const root = !n || n === '2' ? 'sqrt(' + rad + ')' : n === '3' ? 'cbrt(' + rad + ')' : '(' + rad + ')^(1/' + n + ')';
       return glue(glue(l, root), r);
+    }
+    const dv = inkDivs(bb, H);
+    if (dv.length) {
+      const ids = new Set(dv[0].ids), rest = bb.map((_, i) => i).filter(i => !ids.has(i));
+      const ls = rest.filter(i => bb[i].cx < dv[0].cx), rs = rest.filter(i => bb[i].cx >= dv[0].cx);
+      if (ls.length && rs.length) {
+        dbg.root = 'division ✓';
+        const [l, r] = await Promise.all([sub(ls), sub(rs)]);
+        return l && r ? l + '÷' + r : '';
+      }
     }
     const sc = inkScripts(sn, bb, H);
     if (sc) {
