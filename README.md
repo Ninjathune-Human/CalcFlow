@@ -13,6 +13,7 @@ Calculatrice à feuille libre, dans l'esprit de Tydlig, à l'allure de la Calcul
 - **Calcul entre cellules** : on sélectionne une cellule, on appuie sur une opération, on approche une seconde cellule, puis `=`.
 - **Devises et cryptos** : un appui long sur une cellule crée sa conversion, liée à la source. Taux en direct, avec un jeu de taux intégré hors ligne.
 - **Partout** : clavier sur 40 % de l'écran sur iPhone et sur un tiers sur iPad, fonctions scientifiques dépliables (touche fx), clavier à droite en paysage, clavier physique sur ordinateur. Tactile, stylet et souris.
+- **Écriture manuscrite** : le crayon de la barre active l'écriture au doigt, au stylet ou à la souris. Le calcul est reconnu (reconnaissance d'écriture de Google, connexion requise) puis résolu, là où l'on a écrit.
 - **Sauvegarde automatique** dans le navigateur, annulation pas à pas.
 
 ## Gestes
@@ -25,6 +26,7 @@ Calculatrice à feuille libre, dans l'esprit de Tydlig, à l'allure de la Calcul
 | Appui long sur une cellule | Conversion en devise ou en crypto |
 | Cellule sélectionnée, puis une opération | Calcul qui part de cette cellule |
 | Nombre sélectionné, puis ⌫ | Modifier le nombre dans sa cellule |
+| Résultat sélectionné, puis ⌫ | Efface le résultat ; `=` refait le calcul |
 | ⌫ : toucher, maintenir, glisser à gauche | Effacer un caractère, la ligne, toute la feuille |
 
 ## Utilisation

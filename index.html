@@ -38,6 +38,9 @@ button{font:inherit;color:inherit}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 /* ---------- Structure ---------- */
+#ink{grid-area:canvas;width:100%;height:100%;pointer-events:none;touch-action:none;z-index:4}
+body.pen #ink{pointer-events:auto;cursor:crosshair}
+.ico[aria-pressed="true"]{background:var(--t1);color:var(--bg)}
 #app{height:100%;display:grid;grid-template:"bar" auto "canvas" minmax(0,1fr) "kbd" 40% / minmax(0,1fr);
   padding-inline:env(safe-area-inset-left,0px) env(safe-area-inset-right,0px)}
 body.regular:not(.side) #app{grid-template-rows:auto minmax(0,1fr) 33%}
@@ -82,7 +85,7 @@ svg.i{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke
 .x{font-size:.72em}
 .caret{flex:none;width:2px;height:1.08em;margin:0 .02em;border-radius:1px;background:var(--k-op);animation:blink 1.05s step-end infinite}
 @keyframes blink{50%{opacity:0}}
-.ex.shake{animation:shake .34s var(--ease)}
+.ico.shake,.ex.shake{animation:shake .34s var(--ease)}
 @keyframes shake{20%{transform:translateX(-.12em)}40%{transform:translateX(.1em)}60%{transform:translateX(-.07em)}80%{transform:translateX(.04em)}}
 
 /* Glisser-déposer */
@@ -207,10 +210,12 @@ body.side .grab{visibility:hidden}
 <div id="app">
   <div class="bar">
     <button class="ico" id="undo" type="button" aria-label="Annuler" disabled><svg class="i" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+    <button class="ico" id="pen" type="button" aria-label="Écrire à la main" aria-pressed="false"><svg class="i" viewBox="0 0 24 24"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14.5 6.5l3 3"/></svg></button>
   </div>
   <main id="canvas" aria-label="Feuille de calcul">
     <div id="sheet"><canvas id="net" aria-hidden="true"></canvas></div>
   </main>
+  <canvas id="ink" aria-hidden="true"></canvas>
   <section id="kbd" aria-label="Clavier"></section>
 </div>
 <div class="vh" id="live" aria-live="polite"></div>
@@ -300,6 +305,7 @@ let S, hist = [], RATES = {date: SNAP.date, rates: SNAP.rates, live: false}, rat
 let compact = null, side = null, layer = 'num', DEP = {}, popId = null, drag = null, press = null, convOpen = false;
 let caretOff = false; // après =, la nouvelle ligne attend sans curseur jusqu'à la prochaine saisie ou au prochain toucher
 let cellEd = null; // nombre seul modifié dans sa cellule : {id, prev, cur, v0}
+let reopen = null; // résultat effacé par ⌫, en attente de = : {id, prev, cur}
 
 const N = v => ({k:'n', v}), O = v => ({k:'o', v}), R = id => ({k:'ref', id});
 const byId = id => S.ex.find(e => e.id === id);
@@ -522,6 +528,7 @@ function render(opt) {
   opt = opt || {};
   if (drag && drag.on) return;
   if (cellEd && S.active !== cellEd.id) cellEd = null; // annuler ou tout effacer quitte la modification
+  if (reopen && S.active !== reopen.id) reopen = null;
   net.select(null);
   const a0 = byId(S.active); if (a0 && S.cur > a0.t.length) S.cur = a0.t.length;
   DEP = deps();
@@ -1177,7 +1184,29 @@ function leaveCell() {
 function clearLine(e) { if (!e.t.length && !e.conv) return false; e.t = []; e.conv = null; S.cur = 0; }
 const NEXT = 1.4; // écart vers la ligne suivante après = (en lignes de feuille)
 function finish(e) { e.done = true; S.last = e.id; popId = e.id; mk(e.r + NEXT, e.c, true); S.chain = e.id; caretOff = true; cleanup(); }
-function equals() { if (cellEd) return leaveCell(); const e = act(); if (!e.t.length && !e.conv) { nope(); return; } snap(); finish(e); render({scroll:true}); }
+function equals() {
+  if (cellEd) return leaveCell();
+  const e = act(); if (!e.t.length && !e.conv) { nope(); return; }
+  if (reopen && reopen.id === e.id) return recompute(e);
+  snap(); finish(e); render({scroll:true});
+}
+/* Résultat sélectionné : ⌫ l'efface et place le curseur au bout de son calcul ; = le recalcule et le curseur revient où il était */
+function selRes() {
+  const k = net.selected(), e = k && k[0] === 'r' && byId(+k.slice(1));
+  return e && e.done && hasResult(e) ? e : null;
+}
+function eraseRes(e) {
+  snap(); reopen = {id:e.id, prev:S.active, cur:S.cur};
+  e.done = false; S.active = e.id; S.cur = e.t.length; S.chain = null; caretOff = false;
+  render();
+}
+function recompute(e) {
+  const c = reopen; reopen = null;
+  snap(); e.done = true; S.last = S.chain = e.id; popId = e.id; // le résultat revient chiffre après chiffre
+  const p = byId(c.prev);
+  if (p && p.id !== e.id) { S.active = p.id; S.cur = c.cur; } else mk(e.r + NEXT, e.c, true);
+  caretOff = true; cleanup(); render();
+}
 function clearAll() { if (S.ex.length === 1 && !S.ex[0].t.length && !S.ex[0].conv) return; snap(); S.ex = []; S.last = S.chain = null; mk(1, .5); render(); }
 function activate(id, cur) {
   const e = byId(id); if (!e) return;
@@ -1250,6 +1279,87 @@ sheet.addEventListener('click', ev => {
   else mk(r, c);
   S.chain = null; caretOff = false; cleanup(); render();
 });
+
+/* ---------------- Écriture manuscrite ----------------
+   Le tracé est envoyé à la reconnaissance d'écriture de Google (Input Tools) ; le texte reconnu est rejoué
+   touche par touche sur une ligne neuve, posée là où l'on a écrit. */
+const ink = $('#ink'), penBtn = $('#pen'), ictx = ink.getContext('2d');
+const INK_URL = 'https://inputtools.google.com/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8';
+let strokes = [], pen = null, inkTimer = 0, inkBusy = false;
+function inkSize() {
+  const r = ink.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  ink.width = Math.round(r.width * d); ink.height = Math.round(r.height * d);
+  ictx.setTransform(d, 0, 0, d, 0, 0); ictx.lineCap = ictx.lineJoin = 'round'; ictx.lineWidth = 3.2;
+  ictx.strokeStyle = getComputedStyle(document.body).color; ictx.globalAlpha = .9;
+}
+function inkClear() { strokes = []; pen = null; clearTimeout(inkTimer); ictx.clearRect(0, 0, ink.width, ink.height); }
+function setPen(on) {
+  document.body.classList.toggle('pen', on); penBtn.setAttribute('aria-pressed', on);
+  if (on) inkSize(); else inkClear();
+}
+penBtn.addEventListener('click', () => { if (cellEd) leaveCell(); setPen(!document.body.classList.contains('pen')); });
+const GLYPH = {'x':'×','X':'×','*':'×','·':'×','✕':'×','/':'÷',':':'÷','-':'−','–':'−','—':'−',',':'.','O':'0','o':'0','l':'1','I':'1','|':'1'};
+const GKEY = {'+':'add','−':'sub','×':'mul','÷':'div','(':'lp',')':'rp','%':'pct','.':'dec'};
+function inkClean(t) { return [...t].map(ch => GLYPH[ch] || ch).filter(ch => /[0-9+−×÷().%=]/.test(ch)).join(''); }
+function inkPick(c) { // premier candidat entièrement lisible comme un calcul, à défaut le premier
+  const ok = c.find(t => t.replace(/\s/g, '').length && inkClean(t).length === t.replace(/\s/g, '').length && /\d/.test(t));
+  return inkClean(ok || c[0] || '');
+}
+function inkPlay(txt, x, y) {
+  const sr = sheet.getBoundingClientRect(), fs = fsPx();
+  const c = Math.max(.5, Math.round((x - sr.left) / fs * 2) / 2), r = Math.max(0, Math.floor((y - sr.top) / (fs * ROW)));
+  const n = hist.length;
+  const p = free(r, c, 4, false); mk(p.r, p.c);
+  let prev = '', neg = false;
+  for (const ch of txt) {
+    if (ch === '=') break;
+    if (ch === '−' && (!prev || '+−×÷('.includes(prev))) neg = true; // moins unaire : signe du nombre qui suit
+    else if (/\d/.test(ch)) { act_('d' + ch); if (neg) { act_('neg'); neg = false; } }
+    else if (GKEY[ch]) act_(GKEY[ch]);
+    prev = ch;
+  }
+  act_('eq');
+  hist.length = Math.min(hist.length, n + 1); // une écriture = un seul pas d'annulation
+}
+async function inkSend() {
+  if (!strokes.length || inkBusy) return;
+  inkBusy = true;
+  const pts = strokes.flat(), x = Math.min(...pts.map(q => q.cx)), y = Math.min(...pts.map(q => q.cy));
+  const t0 = strokes[0][0].t, W = Math.round(ink.clientWidth), H = Math.round(ink.clientHeight);
+  const body = {options:'enable_pre_space', requests:[{writing_guide:{writing_area_width:W, writing_area_height:H},
+    ink:strokes.map(st => [st.map(q => Math.round(q.x)), st.map(q => Math.round(q.y)), st.map(q => Math.round(q.t - t0))]), language:'en'}]};
+  try {
+    const rs = await fetch(INK_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const j = await rs.json();
+    if (j[0] !== 'SUCCESS') throw new Error('reco');
+    const txt = inkPick(j[1][0][1] || []);
+    inkClear();
+    if (/\d/.test(txt)) inkPlay(txt, x, y); else penNope();
+  } catch (err) { inkClear(); penNope(); $('#live').textContent = 'Reconnaissance indisponible'; }
+  inkBusy = false;
+}
+function penNope() { penBtn.classList.remove('shake'); void penBtn.offsetWidth; penBtn.classList.add('shake'); }
+ink.addEventListener('pointerdown', ev => {
+  if (inkBusy || ev.button > 0) return;
+  ev.preventDefault(); clearTimeout(inkTimer);
+  const r = ink.getBoundingClientRect();
+  pen = [{x:ev.clientX - r.left, y:ev.clientY - r.top, t:ev.timeStamp, cx:ev.clientX, cy:ev.clientY}];
+  try { ink.setPointerCapture(ev.pointerId); } catch (e) {}
+});
+ink.addEventListener('pointermove', ev => {
+  if (!pen) return;
+  const r = ink.getBoundingClientRect(), a = pen[pen.length - 1];
+  const q = {x:ev.clientX - r.left, y:ev.clientY - r.top, t:ev.timeStamp, cx:ev.clientX, cy:ev.clientY};
+  ictx.beginPath(); ictx.moveTo(a.x, a.y); ictx.lineTo(q.x, q.y); ictx.stroke(); pen.push(q);
+});
+const inkEnd = () => {
+  if (!pen) return;
+  if (pen.length < 2) pen.push({...pen[0], t:pen[0].t + 1}); // un point (virgule, point) reste un trait
+  strokes.push(pen); pen = null;
+  clearTimeout(inkTimer); inkTimer = setTimeout(inkSend, 1000);
+};
+ink.addEventListener('pointerup', inkEnd); ink.addEventListener('pointercancel', inkEnd);
+addEventListener('resize', () => { if (document.body.classList.contains('pen')) { inkClear(); inkSize(); } });
 
 /* Glisser-déposer d'un résultat : la vignette se soulève et suit le doigt au pixel près ;
    dans un calcul, les termes s'écartent pour ouvrir la place ; sur la feuille, un repère montre où elle se calera. */
@@ -1471,7 +1581,11 @@ function act_(id) {
     case 'pow': return edit(e => opr(e, '^'));
     case 'mod': return edit(e => opr(e, 'mod'));
     case 'eq': return equals();
-    case 'back': { if (cellEd && !byId(cellEd.id).t.length) return dropCell(); const n = selNum(); return n ? editCell(n) : edit(back); }
+    case 'back': {
+      if (cellEd && !byId(cellEd.id).t.length) return dropCell();
+      const n = selNum(); if (n) return editCell(n);
+      const r = selRes(); return r ? eraseRes(r) : edit(back);
+    }
     case 'paren': return edit(paren);
     case 'lp': return edit(e => ins(e, {k:'l'}));
     case 'rp': return edit(rparen);
@@ -1834,5 +1948,3 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => rend
 fetchRates();
 })();
 </script>
-</body>
-</html>
