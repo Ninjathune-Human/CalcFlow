@@ -1211,7 +1211,7 @@ function recompute(e) {
   if (p && p.id !== e.id) { S.active = p.id; S.cur = c.cur; } else mk(e.r + NEXT, e.c, true);
   caretOff = true; cleanup(); render();
 }
-function clearAll() { if (S.ex.length === 1 && !S.ex[0].t.length && !S.ex[0].conv) return; snap(); S.ex = []; S.last = S.chain = null; mk(1, .5); render(); }
+function clearAll() { if (inkLive()) inkClear(); if (S.ex.length === 1 && !S.ex[0].t.length && !S.ex[0].conv) return; snap(); S.ex = []; S.last = S.chain = null; mk(1, .5); render(); }
 function activate(id, cur) {
   const e = byId(id); if (!e) return;
   if (id !== S.active && e.t.length === 1 && e.t[0].k === 'n' && !e.conv) { // un nombre seul se modifie toujours dans sa cellule
@@ -1299,6 +1299,7 @@ function hudDraw() {
   if (hud.hidden) return;
   hud.textContent = `traits ${strokes.length}${pen ? '+1' : ''} · points ${dbg.pts} · appuis ${dbg.down} · ${dbg.type}\npaume ${dbg.palm} · bouton ${dbg.btn} · orphelins ${dbg.orphan} · annulés ${dbg.cancel} · fusion vide ${dbg.emptyCo}\n${dbg.last}`;
 }
+const inkLive = () => document.body.classList.contains('pen') && strokes.length > 0;
 function inkSize() {
   const r = ink.getBoundingClientRect(), d = window.devicePixelRatio || 1;
   for (const [cv, cx] of [[ink, ictx], [pred, pctx]]) {
@@ -1706,6 +1707,7 @@ function act_(id) {
   }
 }
 function pressKey(id) {
+  if (id === 'back' && inkLive() && !pen) { strokes.pop(); sendGen++; if (ctrl) ctrl.abort(); inkRedraw(); hudDraw(); return; } // écriture en cours : ⌫ retire le dernier trait
   if (id === 'layer') { layer = layer === 'fx' ? 'num' : 'fx'; buildKeys(true); if (!compact) layout(); return; } // iPad : la hauteur des touches suit le volet
   if (id === 'eq' && strokes.length && !pen) return inkSend(); // = : reconnaître et résoudre l'écriture
   act_(id);
@@ -1760,7 +1762,7 @@ kbd.addEventListener('pointerdown', ev => {
   press = {b, id:b.dataset.k, pid:ev.pointerId, long:false, x0:ev.clientX, y0:ev.clientY};
   b.classList.add('on'); squash(b); tick(b);
   try { b.setPointerCapture(ev.pointerId); } catch (e) {}
-  if (press.id === 'back') press.timer = setTimeout(() => { if (press) { press.long = true; edit(clearLine); } }, 450);
+  if (press.id === 'back') press.timer = setTimeout(() => { if (press) { press.long = true; if (inkLive()) inkClear(); else edit(clearLine); } }, 450);
 });
 kbd.addEventListener('pointerup', ev => {
   if (!press || ev.pointerId !== press.pid) return;
