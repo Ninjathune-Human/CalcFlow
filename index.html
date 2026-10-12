@@ -1332,18 +1332,21 @@ function inkPick(c) { // meilleur candidat : calcul bien formé et sans caractè
   if (i < 0) i = cl.findIndex(t => /\d/.test(t));
   return i < 0 ? '' : cl[i];
 }
+const FKEY = {'sqrt(':'sqrt', 'cbrt(':'cbrt', 'sin(':'sin', 'cos(':'cos', 'tan(':'tan', 'ln(':'ln', 'log(':'log'};
+const TKEY = Object.assign({'π':'pi', '!':'fact', '^':'pow'}, GKEY);
 function inkPlay(txt, x, y) {
   const sr = sheet.getBoundingClientRect(), fs = fsPx();
   const c = Math.max(.5, Math.round((x - sr.left) / fs * 2) / 2), r = Math.max(0, Math.floor((y - sr.top) / (fs * ROW)));
   const n = hist.length;
   const p = free(r, c, 4, false); mk(p.r, p.c);
   let prev = '', neg = false;
-  for (const ch of txt) {
-    if (ch === '=') break;
-    if (ch === '−' && (!prev || '+−×÷('.includes(prev))) neg = true; // moins unaire : signe du nombre qui suit
-    else if (/\d/.test(ch)) { act_('d' + ch); if (neg) { act_('neg'); neg = false; } }
-    else if (GKEY[ch]) act_(GKEY[ch]);
-    prev = ch;
+  for (const tk of txt.match(/sqrt\(|cbrt\(|sin\(|cos\(|tan\(|ln\(|log\(|π|\d|[+−×÷().%!^=]/g) || []) {
+    if (tk === '=') break;
+    if (tk === '−' && (!prev || /[+−×÷^(]$/.test(prev))) neg = true; // moins unaire : signe du nombre qui suit
+    else if (/^\d$/.test(tk)) { act_('d' + tk); if (neg) { act_('neg'); neg = false; } }
+    else if (FKEY[tk]) act_(FKEY[tk]);
+    else if (TKEY[tk]) act_(TKEY[tk]);
+    prev = tk;
   }
   act_('eq');
   hist.length = Math.min(hist.length, n + 1); // une écriture = un seul pas d'annulation
@@ -1369,16 +1372,113 @@ function inkSplit(sn) {
   sn.forEach((st, i) => { if (marks.includes(i)) return; const c = (bb[i].x0 + bb[i].x1) / 2; let k = 0; while (k < cxs.length && c > cxs[k]) k++; parts[k].push(st); });
   return parts.every(p => p.length) ? parts : null;
 }
-function inkJoin(cs) { // un morceau par côté de virgule : il doit finir (ou commencer) par un chiffre
-  const out = [];
-  for (let i = 0; i < cs.length; i++) {
-    const cl = cs[i].map(t => inkClean(t.replace(/\s/g, '')).replace(/=$/, '')).filter(t => /\d/.test(t));
-    const ok = cl.find(t => (i === 0 || /^\d/.test(t)) && (i === cs.length - 1 || /\d$/.test(t)));
-    if (!ok) return '';
-    out.push(ok);
+/* Écriture à deux dimensions : racine, exposant, fonctions. La géométrie du tracé repère les structures (vinculum d'une racine,
+   chiffres en position haute) ; chaque morceau plat est lu par Google, puis le tout est recomposé en texte de calcul. */
+const bboxOf = st => { const xs = st.map(q => q.x), ys = st.map(q => q.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys); return {x0, x1, y0, y1, w:x1 - x0, h:y1 - y0, cx:(x0 + x1) / 2, cy:(y0 + y1) / 2}; };
+function inkRef(bb) { // hauteur d'un chiffre : médiane des traits hauts et non horizontaux
+  const c = bb.filter(r => r.h >= .4 * r.w); if (!c.length) return 0;
+  const m = Math.max(...c.map(r => r.h)), t = c.filter(r => r.h >= .5 * m).map(r => r.h).sort((u, v) => u - v);
+  return t[t.length >> 1];
+}
+function inkRoot(sn, bb, H) { // racine la plus à gauche : {R, cov, idx, x0, x1}
+  let best = null;
+  const take = c => { if (!best || c.x0 < best.x0) best = c; };
+  const others = i => bb.map((_, j) => j).filter(j => j !== i);
+  for (let i = 0; i < sn.length; i++) {
+    const b = bb[i], st = sn[i];
+    let cov = null, R = null, tx = b.x0, lx0 = b.x0;
+    if (b.h >= .45 * H && b.w >= .8 * H && st.length > 4) { // coche et vinculum d'un seul trait
+      const lim = b.y0 + .28 * b.h; let k = st.length - 1;
+      while (k > 0 && st[k - 1].y <= lim) k--;
+      if (k > 0 && st[0].y > lim && st[st.length - 1].x - st[k].x >= .7 * H) {
+        tx = st[k].x; R = [i];
+        cov = others(i).filter(j => bb[j].cx > tx - .1 * H && bb[j].cx < b.x1 + .15 * H && bb[j].cy > b.y0 + .3 * H);
+      }
+    }
+    if (!R && b.h <= .2 * b.w && b.w >= .7 * H) { // vinculum seul ; la coche est facultative
+      const o = others(i), inX = j => bb[j].cx > b.x0 && bb[j].cx < b.x1;
+      if (!o.some(j => inX(j) && bb[j].y1 < b.cy + .1 * H && bb[j].h >= .35 * H)) { // un trait haut au-dessus : c'est une fraction, pas une racine
+        cov = o.filter(j => inX(j) && bb[j].y0 >= b.cy - .15 * H && bb[j].y0 <= b.cy + .7 * H);
+        if (cov.some(j => bb[j].h >= .4 * H)) {
+          R = [i]; tx = b.x0;
+          const tick = o.filter(j => !cov.includes(j) && bb[j].h >= .35 * H && bb[j].x1 >= b.x0 - .6 * H && bb[j].x1 <= b.x0 + .35 * H && bb[j].cx < b.x0 + .2 * H).sort((u, v) => bb[v].x1 - bb[u].x1)[0];
+          if (tick !== undefined) { R.push(tick); lx0 = Math.min(lx0, bb[tick].x0); }
+        } else cov = null;
+      } else cov = null;
+    }
+    if (!R || !cov || !cov.length) continue;
+    const ly = b.y0, inR = j => R.includes(j) || cov.includes(j);
+    const idx = others(i).filter(j => !inR(j) && bb[j].h <= .6 * H && bb[j].cx >= lx0 - H && bb[j].cx <= lx0 + .5 * H && bb[j].cy >= ly - .4 * H && bb[j].cy <= ly + .45 * H);
+    take({R, cov, idx, x0:lx0, x1:b.x1});
   }
-  const txt = out.join('.');
-  return WELL.test(txt) && balanced(txt) ? txt : '';
+  return best;
+}
+function inkScripts(sn, bb, H) { // groupes de traits en position haute, à droite d'un trait de base
+  const big = bb.filter(r => r.h >= .75 * H && r.h >= .4 * r.w); if (!big.length) return null;
+  const top = Math.min(...big.map(r => r.y0));
+  const isS = (r, i) => {
+    if (r.h > .65 * H || r.w > .9 * H || r.cy > top + .33 * H) return false;
+    if (r.w < .25 * H && r.h < .25 * H && bb.some((o, k) => k !== i && o.x0 < r.x1 && o.x1 > r.x0)) return false; // point d'un ÷, d'un % ou d'un :
+    return big.some(o => o.x1 <= r.cx + .2 * H && r.cx - o.x1 < H);
+  };
+  const sc = bb.map((r, i) => isS(r, i) ? i : -1).filter(i => i >= 0).sort((u, v) => bb[u].cx - bb[v].cx);
+  if (!sc.length) return null;
+  const groups = [];
+  for (const i of sc) { const g = groups[groups.length - 1]; if (g && bb[i].x0 - g.x1 < .5 * H) { g.ids.push(i); g.x1 = Math.max(g.x1, bb[i].x1); } else groups.push({ids:[i], x0:bb[i].x0, x1:bb[i].x1}); }
+  const pieces = groups.map(() => []).concat([[]]);
+  bb.forEach((r, i) => { if (sc.includes(i)) return; let k = 0; while (k < groups.length && r.cx > groups[k].x0) k++; pieces[k].push(i); });
+  return {groups, pieces};
+}
+const needMul = (a, b) => /[\d)!π%]$/.test(a) && /^(sqrt\(|cbrt\(|sin\(|cos\(|tan\(|ln\(|log\(|π|\()/.test(b);
+const glue = (a, b) => needMul(a, b) ? a + '×' + b : a + b;
+function inkLeaf(t) { // texte reconnu -> alphabet du calcul ; compte ce qui a dû être écarté
+  let s = t.replace(/\s+/g, '').replace(/²/g, '^2').replace(/³/g, '^3');
+  s = s.replace(/(sin|cos|tan|ln|log)(?!\()(-?[\d.]+)/gi, (m, f, n) => f.toLowerCase() + '(' + n + ')').replace(/√(?!\()([\d.]+)/g, 'sqrt($1)').replace(/√\(/g, 'sqrt(');
+  const out = []; let dropped = 0;
+  for (const m of s.match(/sqrt\(|cbrt\(|sin\(|cos\(|tan\(|ln\(|log\(|π|Π|pi|./gi) || []) {
+    const w = m.toLowerCase();
+    if (m.length > 1 && w.endsWith('(')) out.push(w);
+    else if (w === 'π' || w === 'pi') out.push('π');
+    else { const ch = GLYPH[m] || m; if (/[0-9+−×÷().%=!^]/.test(ch)) out.push(ch); else dropped++; }
+  }
+  return {s:out.join(''), dropped};
+}
+async function inkLeafReco(sn, signal) {
+  let best = '';
+  for (const t of await inkReco(sn, signal)) { const r = inkLeaf(t); if (/[\dπ]/.test(r.s) && !r.dropped) return r.s; if (!best && r.s) best = r.s; }
+  return best;
+}
+async function inkParse(sn, signal, depth = 0) {
+  if (!sn.length) return '';
+  const bb = sn.map(bboxOf), H = inkRef(bb);
+  const sub = ids => inkParse(ids.map(i => sn[i]), signal, depth + 1);
+  if (H && sn.length > 1 && depth < 4) {
+    const rt = inkRoot(sn, bb, H);
+    if (rt) {
+      const used = new Set([...rt.R, ...rt.cov, ...rt.idx]), rest = bb.map((_, i) => i).filter(i => !used.has(i));
+      const [l, rad, ix, r] = await Promise.all([sub(rest.filter(i => bb[i].cx < rt.x0)), sub(rt.cov), sub(rt.idx), sub(rest.filter(i => bb[i].cx > rt.x1))]);
+      if (!rad) return '';
+      const n = ix.replace(/\D/g, '');
+      const root = !n || n === '2' ? 'sqrt(' + rad + ')' : n === '3' ? 'cbrt(' + rad + ')' : '(' + rad + ')^(1/' + n + ')';
+      return glue(glue(l, root), r);
+    }
+    const sc = inkScripts(sn, bb, H);
+    if (sc) {
+      const ts = await Promise.all(sc.pieces.map(p => sub(p)).concat(sc.groups.map(g => sub(g.ids))));
+      const np = sc.pieces.length; let out = ts[0];
+      for (let k = 0; k < sc.groups.length; k++) {
+        const e = ts[np + k]; if (!e || !out) return '';
+        out = out + '^' + (/^\d+(\.\d+)?$/.test(e) ? e : '(' + e + ')') + ts[k + 1];
+      }
+      return out;
+    }
+    const cp = inkSplit(sn);
+    if (cp) {
+      const ts = await Promise.all(cp.map(q => sub(q.map(st => sn.indexOf(st)))));
+      if (ts.every((t, k) => t && (k === 0 || /^\d/.test(t)) && (k === ts.length - 1 || /\d$/.test(t)))) return ts.join('.');
+    }
+  }
+  return inkLeafReco(sn, signal);
 }
 async function inkReco(sn, signal) {
   const pts = sn.flat(), ox = Math.min(...pts.map(q => q.x)) - 20, oy = Math.min(...pts.map(q => q.y)) - 20;
@@ -1396,22 +1496,17 @@ async function inkSend() {
   if (ctrl) ctrl.abort(); ctrl = new AbortController();
   const pts = sn.flat(), x = Math.min(...pts.map(q => q.cx)), y = Math.min(...pts.map(q => q.cy));
   try {
-    let txt = '', raw = [];
-    const parts = inkSplit(sn);
-    if (parts) {
-      const cs = await Promise.all(parts.map(pt_ => inkReco(pt_, ctrl.signal)));
-      if (gen !== sendGen) return; // du nouveau a été écrit entre-temps : cette réponse est périmée
-      txt = inkJoin(cs); raw = cs.map(c => c[0] || '');
-      dbg.last = `virgule ×${parts.length - 1} : ` + raw.join(' , ') + (txt ? '  →  ' + txt : '  (rejeté)');
-    }
-    if (!txt) {
+    let txt = await inkParse(sn, ctrl.signal);
+    if (gen !== sendGen) return; // du nouveau a été écrit entre-temps : cette réponse est périmée
+    dbg.last = 'lu : ' + txt;
+    if (!/[\dπ]/.test(txt) || !balanced(txt.replace(/(sqrt|cbrt|sin|cos|tan|ln|log)\(/g, '('))) { // analyse 2D sans suite : lecture à plat du tracé entier
       const c = await inkReco(sn, ctrl.signal);
       if (gen !== sendGen) return;
-      txt = inkPick(c); dbg.last = (parts ? dbg.last + '\n' : '') + 'lu : ' + c.slice(0, 3).join(' | ') + '  →  ' + txt;
+      txt = inkPick(c); dbg.last += '\nà plat : ' + c.slice(0, 3).join(' | ') + '  →  ' + txt;
     }
     hudDraw();
     inkClear();
-    if (/\d/.test(txt)) inkPlay(txt, x, y); else penNope();
+    if (/[\dπ]/.test(txt)) inkPlay(txt, x, y); else penNope();
   } catch (err) {
     if (err && err.name === 'AbortError') return;
     inkClear(); penNope(); $('#live').textContent = 'Reconnaissance indisponible';
