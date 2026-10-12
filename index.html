@@ -1530,7 +1530,9 @@ async function inkParse(sn, signal, depth = 0) {
     const cp = inkSplit(sn);
     if (cp) {
       const ts = await Promise.all(cp.map(q => sub(q.map(st => sn.indexOf(st)))));
-      if (ts.every((t, k) => t && (k === 0 || /^\d/.test(t)) && (k === ts.length - 1 || /\d$/.test(t)))) return ts.join('.');
+      // une fonction lue dans un morceau est déjà fermée ("cos(33)") : la parenthèse passe après la décimale ("cos(33,2)")
+      let close = ''; const bare = ts.map((t, k) => { if (k === ts.length - 1) return t; while (/(sqrt|cbrt|sin|cos|tan|ln|log)\([^()]*\)$/.test(t)) { close += ')'; t = t.slice(0, -1); } return t; });
+      if (bare.every((t, k) => t && (k === 0 || /^\d/.test(t)) && (k === bare.length - 1 || /\d$/.test(t)))) return bare.join('.') + close;
     }
   }
   return inkLeafReco(sn, signal);
