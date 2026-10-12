@@ -1294,7 +1294,7 @@ const pctx = pred.getContext('2d', {desynchronized:true});
 const K = 3; // le tracé part agrandi : les entiers gardent la finesse du Pencil
 const INK_URL = 'https://inputtools.google.com/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8';
 let strokes = [], pen = null, pid = null, sendGen = 0, ctrl = null, penAt = -1e9;
-const dbg = {down:0, palm:0, btn:0, orphan:0, cancel:0, emptyCo:0, pts:0, type:'-', last:''}; // diagnostic : appui long sur le crayon
+const dbg = {root:'', down:0, palm:0, btn:0, orphan:0, cancel:0, emptyCo:0, pts:0, type:'-', last:''}; // diagnostic : appui long sur le crayon
 const hud = document.createElement('div'); hud.id = 'inkhud'; hud.hidden = true; ink.after(hud);
 function hudDraw() {
   if (hud.hidden) return;
@@ -1378,39 +1378,42 @@ const bboxOf = st => { const xs = st.map(q => q.x), ys = st.map(q => q.y), x0 = 
 function inkRef(bb) { // hauteur d'un chiffre : médiane des traits hauts et non horizontaux
   const c = bb.filter(r => r.h >= .4 * r.w); if (!c.length) return 0;
   const m = Math.max(...c.map(r => r.h)), t = c.filter(r => r.h >= .5 * m).map(r => r.h).sort((u, v) => u - v);
-  return t[t.length >> 1];
+  return t[(t.length - 1) >> 1];
+}
+function hRun(st) { // plus long tronçon quasi horizontal d'un trait : {a, b} (indices de points)
+  const n = st.length, step = Math.max(1, Math.round(n / 70)); let best = null;
+  for (let i = 0; i < n - 1; i += step) for (let j = n - 1; j > i; j -= step) {
+    const dx = st[j].x - st[i].x, dy = st[j].y - st[i].y, len = Math.hypot(dx, dy);
+    if (dx <= 0 || len < (best ? best.len : 0) + 1 || Math.abs(dy) > .3 * dx) continue;
+    let ok = true;
+    for (let k = i; k <= j; k += step) if (Math.abs((st[k].y - st[i].y) * dx - (st[k].x - st[i].x) * dy) / len > Math.max(3, .1 * len)) { ok = false; break; }
+    if (ok) { best = {a:i, b:j, len, x0:st[i].x, x1:st[j].x, y:(st[i].y + st[j].y) / 2}; break; }
+  }
+  return best;
 }
 function inkRoot(sn, bb, H) { // racine la plus à gauche : {R, cov, idx, x0, x1}
-  let best = null;
+  let best = null, why = '';
   const take = c => { if (!best || c.x0 < best.x0) best = c; };
   const others = i => bb.map((_, j) => j).filter(j => j !== i);
   for (let i = 0; i < sn.length; i++) {
-    const b = bb[i], st = sn[i];
-    let cov = null, R = null, tx = b.x0, lx0 = b.x0;
-    if (b.h >= .45 * H && b.w >= .8 * H && st.length > 4) { // coche et vinculum d'un seul trait
-      const lim = b.y0 + .28 * b.h; let k = st.length - 1;
-      while (k > 0 && st[k - 1].y <= lim) k--;
-      if (k > 0 && st[0].y > lim && st[st.length - 1].x - st[k].x >= .7 * H) {
-        tx = st[k].x; R = [i];
-        cov = others(i).filter(j => bb[j].cx > tx - .1 * H && bb[j].cx < b.x1 + .15 * H && bb[j].cy > b.y0 + .3 * H);
-      }
+    const b = bb[i], st = sn[i], run = hRun(st);
+    if (!run || run.len < .6 * H) continue;
+    const whole = b.h <= .25 * b.w, tail = run.b >= st.length * .6 && b.h >= .35 * H && run.a > 0 && st[0].y > b.y0 + .25 * b.h && run.y <= b.y0 + .3 * b.h;
+    if (!whole && !tail) continue;
+    const o = others(i), L = run.y;
+    const cov = o.filter(j => bb[j].cx > run.x0 - .1 * H && bb[j].cx < run.x1 + .45 * H && bb[j].cy > L + .1 * H && bb[j].y0 > L - .6 * H);
+    if (!cov.some(j => bb[j].h >= .3 * H)) { why = 'vinculum sans radicande'; continue; }
+    if (o.some(j => !cov.includes(j) && bb[j].h >= .35 * H && bb[j].cx > run.x0 && bb[j].cx < run.x1 && bb[j].cy < L - .2 * H)) { why = 'fraction'; continue; }
+    const R = [i]; let lx0 = tail ? Math.min(b.x0, run.x0) : run.x0;
+    if (whole) { // coche écrite à part
+      const tick = o.filter(j => !cov.includes(j) && bb[j].h >= .3 * H && bb[j].x1 >= run.x0 - .7 * H && bb[j].x1 <= run.x0 + .4 * H && bb[j].cx < run.x0 + .25 * H).sort((u, v) => bb[v].x1 - bb[u].x1)[0];
+      if (tick !== undefined) { R.push(tick); lx0 = Math.min(lx0, bb[tick].x0); }
     }
-    if (!R && b.h <= .2 * b.w && b.w >= .7 * H) { // vinculum seul ; la coche est facultative
-      const o = others(i), inX = j => bb[j].cx > b.x0 && bb[j].cx < b.x1;
-      if (!o.some(j => inX(j) && bb[j].y1 < b.cy + .1 * H && bb[j].h >= .35 * H)) { // un trait haut au-dessus : c'est une fraction, pas une racine
-        cov = o.filter(j => inX(j) && bb[j].y0 >= b.cy - .15 * H && bb[j].y0 <= b.cy + .7 * H);
-        if (cov.some(j => bb[j].h >= .4 * H)) {
-          R = [i]; tx = b.x0;
-          const tick = o.filter(j => !cov.includes(j) && bb[j].h >= .35 * H && bb[j].x1 >= b.x0 - .6 * H && bb[j].x1 <= b.x0 + .35 * H && bb[j].cx < b.x0 + .2 * H).sort((u, v) => bb[v].x1 - bb[u].x1)[0];
-          if (tick !== undefined) { R.push(tick); lx0 = Math.min(lx0, bb[tick].x0); }
-        } else cov = null;
-      } else cov = null;
-    }
-    if (!R || !cov || !cov.length) continue;
-    const ly = b.y0, inR = j => R.includes(j) || cov.includes(j);
-    const idx = others(i).filter(j => !inR(j) && bb[j].h <= .6 * H && bb[j].cx >= lx0 - H && bb[j].cx <= lx0 + .5 * H && bb[j].cy >= ly - .4 * H && bb[j].cy <= ly + .45 * H);
-    take({R, cov, idx, x0:lx0, x1:b.x1});
+    const inR = j => R.includes(j) || cov.includes(j);
+    const idx = o.filter(j => !inR(j) && bb[j].h <= .65 * H && bb[j].cx >= lx0 - 1.2 * H && bb[j].cx <= lx0 + .6 * H && bb[j].cy >= L - .6 * H && bb[j].cy <= L + .5 * H);
+    take({R, cov, idx, x0:lx0, x1:Math.max(run.x1, ...cov.map(j => bb[j].x1))});
   }
+  dbg.root = best ? `racine ✓ (radicande ${best.cov.length} trait${best.cov.length > 1 ? 's' : ''}${best.idx.length ? ', indice' : ''})` : (why ? 'racine ✗ ' + why : '');
   return best;
 }
 function inkScripts(sn, bb, H) { // groupes de traits en position haute, à droite d'un trait de base
@@ -1456,8 +1459,9 @@ async function inkParse(sn, signal, depth = 0) {
     const rt = inkRoot(sn, bb, H);
     if (rt) {
       const used = new Set([...rt.R, ...rt.cov, ...rt.idx]), rest = bb.map((_, i) => i).filter(i => !used.has(i));
-      const [l, rad, ix, r] = await Promise.all([sub(rest.filter(i => bb[i].cx < rt.x0)), sub(rt.cov), sub(rt.idx), sub(rest.filter(i => bb[i].cx > rt.x1))]);
-      if (!rad) return '';
+      const ls = rest.filter(i => bb[i].cx < rt.x0), rs = rest.filter(i => bb[i].cx > rt.x1);
+      const [l, rad, ix, r] = await Promise.all([sub(ls), sub(rt.cov), sub(rt.idx), sub(rs)]);
+      if (!rad || (ls.length && !l) || (rs.length && !r) || (rt.idx.length && !ix)) return ''; // un morceau illisible : mieux vaut la lecture à plat que de l'omettre en silence
       const n = ix.replace(/\D/g, '');
       const root = !n || n === '2' ? 'sqrt(' + rad + ')' : n === '3' ? 'cbrt(' + rad + ')' : '(' + rad + ')^(1/' + n + ')';
       return glue(glue(l, root), r);
@@ -1498,7 +1502,7 @@ async function inkSend() {
   try {
     let txt = await inkParse(sn, ctrl.signal);
     if (gen !== sendGen) return; // du nouveau a été écrit entre-temps : cette réponse est périmée
-    dbg.last = 'lu : ' + txt;
+    dbg.last = (dbg.root ? dbg.root + '\n' : '') + 'lu : ' + txt;
     if (!/[\dπ]/.test(txt) || !balanced(txt.replace(/(sqrt|cbrt|sin|cos|tan|ln|log)\(/g, '('))) { // analyse 2D sans suite : lecture à plat du tracé entier
       const c = await inkReco(sn, ctrl.signal);
       if (gen !== sendGen) return;
