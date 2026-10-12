@@ -38,8 +38,10 @@ button{font:inherit;color:inherit}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 /* ---------- Structure ---------- */
-#ink{grid-area:canvas;width:100%;height:100%;pointer-events:none;touch-action:none;z-index:4}
+#ink,#inkp{grid-area:canvas;width:100%;height:100%;pointer-events:none;touch-action:none;z-index:4}
+#inkp{pointer-events:none!important}
 body.pen #ink{pointer-events:auto;cursor:crosshair}
+#inkp{z-index:5}
 .ico[aria-pressed="true"]{background:var(--t1);color:var(--bg)}
 #app{height:100%;display:grid;grid-template:"bar" auto "canvas" minmax(0,1fr) "kbd" 40% / minmax(0,1fr);
   padding-inline:env(safe-area-inset-left,0px) env(safe-area-inset-right,0px)}
@@ -205,6 +207,7 @@ body.side .grab{visibility:hidden}
 }
 @media (prefers-reduced-transparency:reduce){#conv{background:var(--s1);-webkit-backdrop-filter:none;backdrop-filter:none}}
 </style>
+
 </head>
 <body>
 <div id="app">
@@ -1283,21 +1286,27 @@ sheet.addEventListener('click', ev => {
 /* ---------------- Écriture manuscrite ----------------
    Le tracé est envoyé à la reconnaissance d'écriture de Google (Input Tools) ; le texte reconnu est rejoué
    touche par touche sur une ligne neuve, posée là où l'on a écrit. */
-const ink = $('#ink'), penBtn = $('#pen'), ictx = ink.getContext('2d');
+const ink = $('#ink'), penBtn = $('#pen'), ictx = ink.getContext('2d', {desynchronized:true});
+const pred = ink.cloneNode(); pred.id = 'inkp'; pred.style.pointerEvents = 'none'; ink.after(pred); // 2e calque : prédiction du trait, effacée à chaque événement
+const pctx = pred.getContext('2d', {desynchronized:true});
 const INK_URL = 'https://inputtools.google.com/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8';
-let strokes = [], pen = null, inkTimer = 0, inkBusy = false;
+const IDLE = 1500; // pause après le dernier trait avant la reconnaissance ; le survol du stylet la repousse
+let strokes = [], pen = null, pid = null, inkTimer = 0, sendGen = 0, ctrl = null, penAt = -1e9;
 function inkSize() {
   const r = ink.getBoundingClientRect(), d = window.devicePixelRatio || 1;
-  ink.width = Math.round(r.width * d); ink.height = Math.round(r.height * d);
-  ictx.setTransform(d, 0, 0, d, 0, 0); ictx.lineCap = ictx.lineJoin = 'round'; ictx.lineWidth = 3.2;
-  ictx.strokeStyle = getComputedStyle(document.body).color; ictx.globalAlpha = .9;
+  for (const [cv, cx] of [[ink, ictx], [pred, pctx]]) {
+    cv.width = Math.round(r.width * d); cv.height = Math.round(r.height * d);
+    cx.setTransform(d, 0, 0, d, 0, 0); cx.lineCap = cx.lineJoin = 'round';
+    cx.strokeStyle = getComputedStyle(document.body).color; cx.globalAlpha = .92;
+  }
 }
-function inkClear() { strokes = []; pen = null; clearTimeout(inkTimer); ictx.clearRect(0, 0, ink.width, ink.height); }
+function inkClear() { strokes = []; pen = pid = null; clearTimeout(inkTimer); sendGen++; if (ctrl) ctrl.abort(); ictx.clearRect(0, 0, ink.width, ink.height); pctx.clearRect(0, 0, pred.width, pred.height); }
 function setPen(on) {
   document.body.classList.toggle('pen', on); penBtn.setAttribute('aria-pressed', on);
   if (on) inkSize(); else inkClear();
 }
 penBtn.addEventListener('click', () => { if (cellEd) leaveCell(); setPen(!document.body.classList.contains('pen')); });
+const later = () => { clearTimeout(inkTimer); if (strokes.length && !pen) inkTimer = setTimeout(inkSend, IDLE); };
 const GLYPH = {'x':'×','X':'×','*':'×','·':'×','✕':'×','/':'÷',':':'÷','-':'−','–':'−','—':'−',',':'.','O':'0','o':'0','l':'1','I':'1','|':'1'};
 const GKEY = {'+':'add','−':'sub','×':'mul','÷':'div','(':'lp',')':'rp','%':'pct','.':'dec'};
 function inkClean(t) { return [...t].map(ch => GLYPH[ch] || ch).filter(ch => /[0-9+−×÷().%=]/.test(ch)).join(''); }
@@ -1322,43 +1331,64 @@ function inkPlay(txt, x, y) {
   hist.length = Math.min(hist.length, n + 1); // une écriture = un seul pas d'annulation
 }
 async function inkSend() {
-  if (!strokes.length || inkBusy) return;
-  inkBusy = true;
-  const pts = strokes.flat(), x = Math.min(...pts.map(q => q.cx)), y = Math.min(...pts.map(q => q.cy));
-  const t0 = strokes[0][0].t, W = Math.round(ink.clientWidth), H = Math.round(ink.clientHeight);
+  if (!strokes.length || pen) return;
+  const sn = strokes.slice(), gen = ++sendGen;
+  if (ctrl) ctrl.abort(); ctrl = new AbortController();
+  const pts = sn.flat(), x = Math.min(...pts.map(q => q.cx)), y = Math.min(...pts.map(q => q.cy));
+  const t0 = sn[0][0].t, W = Math.round(ink.clientWidth), H = Math.round(ink.clientHeight);
   const body = {options:'enable_pre_space', requests:[{writing_guide:{writing_area_width:W, writing_area_height:H},
-    ink:strokes.map(st => [st.map(q => Math.round(q.x)), st.map(q => Math.round(q.y)), st.map(q => Math.round(q.t - t0))]), language:'en'}]};
+    ink:sn.map(st => [st.map(q => Math.round(q.x)), st.map(q => Math.round(q.y)), st.map(q => Math.round(q.t - t0))]), language:'en'}]};
   try {
-    const rs = await fetch(INK_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const rs = await fetch(INK_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:ctrl.signal});
     const j = await rs.json();
+    if (gen !== sendGen) return; // du nouveau a été écrit entre-temps : cette réponse est périmée, la reconnaissance repartira avec tout le tracé
     if (j[0] !== 'SUCCESS') throw new Error('reco');
     const txt = inkPick(j[1][0][1] || []);
     inkClear();
     if (/\d/.test(txt)) inkPlay(txt, x, y); else penNope();
-  } catch (err) { inkClear(); penNope(); $('#live').textContent = 'Reconnaissance indisponible'; }
-  inkBusy = false;
+  } catch (err) {
+    if (err && err.name === 'AbortError') return;
+    inkClear(); penNope(); $('#live').textContent = 'Reconnaissance indisponible';
+  }
 }
 function penNope() { penBtn.classList.remove('shake'); void penBtn.offsetWidth; penBtn.classList.add('shake'); }
+
+/* Saisie : tout est capté sans jamais bloquer, quelle que soit la vitesse (événements fusionnés du stylet à 240 Hz),
+   pression pour l'épaisseur, prédiction pour la latence, paume ignorée tant que le stylet est actif. */
+const pt = (ev, r) => ({x:ev.clientX - r.left, y:ev.clientY - r.top, t:ev.timeStamp, cx:ev.clientX, cy:ev.clientY, p:ev.pointerType === 'pen' ? (ev.pressure || .5) : .5});
+const wOf = (a, b) => 1.3 + (a.p + b.p) * 1.9;
+function seg(cx, a, b) { cx.lineWidth = wOf(a, b); cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.stroke(); }
 ink.addEventListener('pointerdown', ev => {
-  if (inkBusy || ev.button > 0) return;
-  ev.preventDefault(); clearTimeout(inkTimer);
-  const r = ink.getBoundingClientRect();
-  pen = [{x:ev.clientX - r.left, y:ev.clientY - r.top, t:ev.timeStamp, cx:ev.clientX, cy:ev.clientY}];
-  try { ink.setPointerCapture(ev.pointerId); } catch (e) {}
+  if (ev.button > 0 || pid !== null) return;
+  if (ev.pointerType === 'pen') penAt = ev.timeStamp;
+  else if (ev.timeStamp - penAt < 3000) return; // paume posée pendant l'écriture au stylet
+  ev.preventDefault();
+  sendGen++; if (ctrl) ctrl.abort(); clearTimeout(inkTimer); // on écrit encore : toute reconnaissance en cours est périmée
+  pid = ev.pointerId; pen = [pt(ev, ink.getBoundingClientRect())];
+  try { ink.setPointerCapture(pid); } catch (e) {}
+  ictx.fillStyle = ictx.strokeStyle; ictx.beginPath(); ictx.arc(pen[0].x, pen[0].y, wOf(pen[0], pen[0]) / 2, 0, 7); ictx.fill();
 });
 ink.addEventListener('pointermove', ev => {
-  if (!pen) return;
-  const r = ink.getBoundingClientRect(), a = pen[pen.length - 1];
-  const q = {x:ev.clientX - r.left, y:ev.clientY - r.top, t:ev.timeStamp, cx:ev.clientX, cy:ev.clientY};
-  ictx.beginPath(); ictx.moveTo(a.x, a.y); ictx.lineTo(q.x, q.y); ictx.stroke(); pen.push(q);
+  if (ev.pointerType === 'pen') penAt = ev.timeStamp;
+  if (pid === null) { if (ev.pointerType === 'pen') later(); return; } // survol : la session d'écriture continue
+  if (ev.pointerId !== pid) return;
+  const r = ink.getBoundingClientRect();
+  for (const e of (ev.getCoalescedEvents ? ev.getCoalescedEvents() : [ev])) {
+    const q = pt(e, r), a = pen[pen.length - 1];
+    if (Math.abs(q.x - a.x) + Math.abs(q.y - a.y) < .4) continue;
+    seg(ictx, a, q); pen.push(q);
+  }
+  pctx.clearRect(0, 0, pred.width, pred.height);
+  if (ev.getPredictedEvents) { let a = pen[pen.length - 1]; for (const e of ev.getPredictedEvents()) { const q = pt(e, r); seg(pctx, a, q); a = q; } }
 });
-const inkEnd = () => {
-  if (!pen) return;
+function inkEnd(ev) {
+  if (pid === null || ev.pointerId !== pid) return;
+  pctx.clearRect(0, 0, pred.width, pred.height);
   if (pen.length < 2) pen.push({...pen[0], t:pen[0].t + 1}); // un point (virgule, point) reste un trait
-  strokes.push(pen); pen = null;
-  clearTimeout(inkTimer); inkTimer = setTimeout(inkSend, 1000);
-};
+  strokes.push(pen); pen = pid = null; later();
+}
 ink.addEventListener('pointerup', inkEnd); ink.addEventListener('pointercancel', inkEnd);
+ink.addEventListener('contextmenu', ev => ev.preventDefault());
 addEventListener('resize', () => { if (document.body.classList.contains('pen')) { inkClear(); inkSize(); } });
 
 /* Glisser-déposer d'un résultat : la vignette se soulève et suit le doigt au pixel près ;
@@ -1600,6 +1630,7 @@ function act_(id) {
 }
 function pressKey(id) {
   if (id === 'layer') { layer = layer === 'fx' ? 'num' : 'fx'; buildKeys(true); if (!compact) layout(); return; } // iPad : la hauteur des touches suit le volet
+  if (id === 'eq' && strokes.length && !pen) { clearTimeout(inkTimer); return inkSend(); } // = : valider l'écriture tout de suite
   act_(id);
   if (compact && layer === 'fx' && id !== 'deg') { layer = 'num'; buildKeys(true); }
 }
