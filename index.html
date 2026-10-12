@@ -1289,6 +1289,7 @@ sheet.addEventListener('click', ev => {
 const ink = $('#ink'), penBtn = $('#pen'), ictx = ink.getContext('2d', {desynchronized:true});
 const pred = ink.cloneNode(); pred.id = 'inkp'; pred.style.pointerEvents = 'none'; ink.after(pred); // 2e calque : prédiction du trait, effacée à chaque événement
 const pctx = pred.getContext('2d', {desynchronized:true});
+const K = 3; // le tracé part agrandi : les entiers gardent la finesse du Pencil
 const INK_URL = 'https://inputtools.google.com/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8';
 let strokes = [], pen = null, pid = null, sendGen = 0, ctrl = null, penAt = -1e9;
 function inkSize() {
@@ -1309,9 +1310,15 @@ penBtn.addEventListener('click', () => { if (cellEd) leaveCell(); setPen(!docume
 const GLYPH = {'x':'×','X':'×','*':'×','·':'×','✕':'×','/':'÷',':':'÷','-':'−','–':'−','—':'−',',':'.','O':'0','o':'0','l':'1','I':'1','|':'1'};
 const GKEY = {'+':'add','−':'sub','×':'mul','÷':'div','(':'lp',')':'rp','%':'pct','.':'dec'};
 function inkClean(t) { return [...t].map(ch => GLYPH[ch] || ch).filter(ch => /[0-9+−×÷().%=]/.test(ch)).join(''); }
-function inkPick(c) { // premier candidat entièrement lisible comme un calcul, à défaut le premier
-  const ok = c.find(t => t.replace(/\s/g, '').length && inkClean(t).length === t.replace(/\s/g, '').length && /\d/.test(t));
-  return inkClean(ok || c[0] || '');
+const WELL = /^[(−]*\d[\d.]*%?(?:\)*[+−×÷][(−]*\d[\d.]*%?)*\)*=?$/;
+const balanced = t => { let d = 0; for (const ch of t) { d += ch === '(' ? 1 : ch === ')' ? -1 : 0; if (d < 0) return false; } return d === 0; };
+function inkPick(c) { // meilleur candidat : calcul bien formé et sans caractère écarté, puis bien formé, puis lisible
+  const raw = c.map(t => t.replace(/\s/g, '')), cl = raw.map(inkClean);
+  const good = i => WELL.test(cl[i]) && balanced(cl[i]);
+  let i = cl.findIndex((t, k) => good(k) && t.length === raw[k].length);
+  if (i < 0) i = cl.findIndex((t, k) => good(k));
+  if (i < 0) i = cl.findIndex(t => /\d/.test(t));
+  return i < 0 ? '' : cl[i];
 }
 function inkPlay(txt, x, y) {
   const sr = sheet.getBoundingClientRect(), fs = fsPx();
@@ -1335,9 +1342,9 @@ async function inkSend() {
   if (ctrl) ctrl.abort(); ctrl = new AbortController();
   const pts = sn.flat(), x = Math.min(...pts.map(q => q.cx)), y = Math.min(...pts.map(q => q.cy));
   const ox = Math.min(...pts.map(q => q.x)) - 20, oy = Math.min(...pts.map(q => q.y)) - 20;
-  const t0 = sn[0][0].t, W = Math.round(Math.max(...pts.map(q => q.x)) - ox + 20), H = Math.round(Math.max(...pts.map(q => q.y)) - oy + 20);
+  const t0 = sn[0][0].t, W = Math.round((Math.max(...pts.map(q => q.x)) - ox + 20) * K), H = Math.round((Math.max(...pts.map(q => q.y)) - oy + 20) * K);
   const body = {options:'enable_pre_space', requests:[{writing_guide:{writing_area_width:W, writing_area_height:H},
-    ink:sn.map(st => [st.map(q => Math.round(q.x - ox)), st.map(q => Math.round(q.y - oy)), st.map(q => Math.round(q.t - t0))]), language:'en'}]};
+    ink:(() => { let off = 0, prevEnd = sn[0][0].t; return sn.map(st => { off += Math.max(0, Math.min(st[0].t - prevEnd, 120)) - (st[0].t - prevEnd); prevEnd = st[st.length - 1].t; return [st.map(q => Math.round((q.x - ox) * K)), st.map(q => Math.round((q.y - oy) * K)), st.map(q => Math.round(q.t - t0 + off))]; }); })(), language:'en'}]};
   try {
     const rs = await fetch(INK_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:ctrl.signal});
     const j = await rs.json();
@@ -1373,9 +1380,9 @@ ink.addEventListener('pointermove', ev => {
   if (ev.pointerType === 'pen') penAt = ev.timeStamp;
   if (pid === null) return;
   if (ev.pointerId !== pid) return;
-  if (ev.pointerType === 'pen' && ev.buttons === 0) { inkEnd(); return; } // relevé sans événement de fin
   const r = ink.getBoundingClientRect();
-  for (const e of (ev.getCoalescedEvents ? ev.getCoalescedEvents() : [ev])) {
+  const co = ev.getCoalescedEvents ? ev.getCoalescedEvents() : [];
+  for (const e of (co.length ? co : [ev])) { // Safari renvoie parfois une liste vide : le point courant compte alors
     const q = pt(e, r), a = pen[pen.length - 1];
     if (Math.abs(q.x - a.x) + Math.abs(q.y - a.y) < .4) continue;
     seg(ictx, a, q); pen.push(q);
