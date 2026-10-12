@@ -118,6 +118,7 @@ body.side #kbd{padding:12px 16px 16px 6px}
 .key.top{--k:var(--k-top);--kon:var(--k-top-on)}
 .key.sci{--k:var(--k-sci);--kon:var(--k-sci-on)}
 .key.op{--k:var(--k-op);--kon:var(--k-op-on)}
+.key.lit{--k:#0a84ff;--kon:#5eb0ff} /* fx déployé : la touche s'allume en bleu */
 .key>span{font-size:min(44cqh,30cqw);font-weight:400;line-height:1;display:block;white-space:nowrap}
 .key.op>span{font-size:min(56cqh,36cqw);font-weight:400}
 .key.top>span{font-size:min(40cqh,28cqw)}
@@ -1652,6 +1653,7 @@ function grid(cls, ids) {
     const label = id === 'deg' ? degLabel() : id === 'layer' ? (compact ? (layer === 'fx' ? '123' : '<i>f</i>x') : '<i>f</i>x' + IC.chev) : d[1];
     b.innerHTML = (id === 'back' ? IC.bin : '') + '<span>' + label + '</span>';
     if (id === 'back') b.classList.add('swipe');
+    if (id === 'layer') b.classList.toggle('lit', layer === 'fx');
     if (id === 'layer' && !compact) { b.classList.toggle('open', layer === 'fx'); b.setAttribute('aria-expanded', layer === 'fx'); } // encoche : déployé ou replié
     g.appendChild(b);
   }
