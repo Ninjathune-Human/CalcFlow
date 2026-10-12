@@ -1346,22 +1346,68 @@ function inkPlay(txt, x, y) {
   act_('eq');
   hist.length = Math.min(hist.length, n + 1); // une écriture = un seul pas d'annulation
 }
+/* Virgule décimale : un petit trait bas, entre deux chiffres, est lu par la géométrie et non par Google (qui le prend
+   pour un point, une apostrophe ou rien). Le tracé est coupé à chaque virgule ; chaque morceau est reconnu à part. */
+function inkSplit(sn) {
+  const bb = sn.map(st => { const xs = st.map(q => q.x), ys = st.map(q => q.y); return {x0:Math.min(...xs), x1:Math.max(...xs), y0:Math.min(...ys), y1:Math.max(...ys)}; });
+  const hmax = Math.max(...bb.map(r => r.y1 - r.y0)), big = bb.filter(r => r.y1 - r.y0 >= .6 * hmax);
+  if (!big.length || hmax < 24) return null;
+  const top = Math.min(...big.map(r => r.y0)), H = Math.max(...big.map(r => r.y1)) - top;
+  const isMark = (r, i) => {
+    const w = r.x1 - r.x0, h = r.y1 - r.y0, cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+    if (w > .32 * H || h > .45 * H || cy < top + .6 * H) return false;
+    if (bb.some((o, k) => k !== i && o.x0 < r.x1 && o.x1 > r.x0)) return false; // un autre trait au-dessus ou en dessous (÷, =, %, :) : ce n'est pas une virgule
+    const left = big.some(o => o.x1 <= cx + .1 * H && cx - o.x1 < H), right = big.some(o => o.x0 >= cx - .1 * H && o.x0 - cx < H);
+    return left && right;
+  };
+  const marks = bb.map((r, i) => isMark(r, i) ? i : -1).filter(i => i >= 0);
+  if (!marks.length) return null;
+  const cxs = marks.map(i => (bb[i].x0 + bb[i].x1) / 2).sort((u, v) => u - v);
+  const parts = cxs.map(() => []).concat([[]]);
+  sn.forEach((st, i) => { if (marks.includes(i)) return; const c = (bb[i].x0 + bb[i].x1) / 2; let k = 0; while (k < cxs.length && c > cxs[k]) k++; parts[k].push(st); });
+  return parts.every(p => p.length) ? parts : null;
+}
+function inkJoin(cs) { // un morceau par côté de virgule : il doit finir (ou commencer) par un chiffre
+  const out = [];
+  for (let i = 0; i < cs.length; i++) {
+    const cl = cs[i].map(t => inkClean(t.replace(/\s/g, '')).replace(/=$/, '')).filter(t => /\d/.test(t));
+    const ok = cl.find(t => (i === 0 || /^\d/.test(t)) && (i === cs.length - 1 || /\d$/.test(t)));
+    if (!ok) return '';
+    out.push(ok);
+  }
+  const txt = out.join('.');
+  return WELL.test(txt) && balanced(txt) ? txt : '';
+}
+async function inkReco(sn, signal) {
+  const pts = sn.flat(), ox = Math.min(...pts.map(q => q.x)) - 20, oy = Math.min(...pts.map(q => q.y)) - 20;
+  const t0 = sn[0][0].t, W = Math.round((Math.max(...pts.map(q => q.x)) - ox + 20) * K), H = Math.round((Math.max(...pts.map(q => q.y)) - oy + 20) * K);
+  const body = {options:'enable_pre_space', requests:[{writing_guide:{writing_area_width:W, writing_area_height:H},
+    ink:(() => { let off = 0, prevEnd = sn[0][0].t; return sn.map(st => { off += Math.max(0, Math.min(st[0].t - prevEnd, 120)) - (st[0].t - prevEnd); prevEnd = st[st.length - 1].t; return [st.map(q => Math.round((q.x - ox) * K)), st.map(q => Math.round((q.y - oy) * K)), st.map(q => Math.round(q.t - t0 + off))]; }); })(), language:'en'}]};
+  const rs = await fetch(INK_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal});
+  const j = await rs.json();
+  if (j[0] !== 'SUCCESS') throw new Error('reco');
+  return j[1][0][1] || [];
+}
 async function inkSend() {
   if (!strokes.length || pen) return;
   const sn = strokes.slice(), gen = ++sendGen;
   if (ctrl) ctrl.abort(); ctrl = new AbortController();
   const pts = sn.flat(), x = Math.min(...pts.map(q => q.cx)), y = Math.min(...pts.map(q => q.cy));
-  const ox = Math.min(...pts.map(q => q.x)) - 20, oy = Math.min(...pts.map(q => q.y)) - 20;
-  const t0 = sn[0][0].t, W = Math.round((Math.max(...pts.map(q => q.x)) - ox + 20) * K), H = Math.round((Math.max(...pts.map(q => q.y)) - oy + 20) * K);
-  const body = {options:'enable_pre_space', requests:[{writing_guide:{writing_area_width:W, writing_area_height:H},
-    ink:(() => { let off = 0, prevEnd = sn[0][0].t; return sn.map(st => { off += Math.max(0, Math.min(st[0].t - prevEnd, 120)) - (st[0].t - prevEnd); prevEnd = st[st.length - 1].t; return [st.map(q => Math.round((q.x - ox) * K)), st.map(q => Math.round((q.y - oy) * K)), st.map(q => Math.round(q.t - t0 + off))]; }); })(), language:'en'}]};
   try {
-    const rs = await fetch(INK_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:ctrl.signal});
-    const j = await rs.json();
-    if (gen !== sendGen) return; // du nouveau a été écrit entre-temps : cette réponse est périmée, la reconnaissance repartira avec tout le tracé
-    if (j[0] !== 'SUCCESS') throw new Error('reco');
-    const txt = inkPick(j[1][0][1] || []);
-    dbg.last = 'lu : ' + (j[1][0][1] || []).slice(0, 3).join(' | ') + '  →  ' + txt; hudDraw();
+    let txt = '', raw = [];
+    const parts = inkSplit(sn);
+    if (parts) {
+      const cs = await Promise.all(parts.map(pt_ => inkReco(pt_, ctrl.signal)));
+      if (gen !== sendGen) return; // du nouveau a été écrit entre-temps : cette réponse est périmée
+      txt = inkJoin(cs); raw = cs.map(c => c[0] || '');
+      dbg.last = `virgule ×${parts.length - 1} : ` + raw.join(' , ') + (txt ? '  →  ' + txt : '  (rejeté)');
+    }
+    if (!txt) {
+      const c = await inkReco(sn, ctrl.signal);
+      if (gen !== sendGen) return;
+      txt = inkPick(c); dbg.last = (parts ? dbg.last + '\n' : '') + 'lu : ' + c.slice(0, 3).join(' | ') + '  →  ' + txt;
+    }
+    hudDraw();
     inkClear();
     if (/\d/.test(txt)) inkPlay(txt, x, y); else penNope();
   } catch (err) {
