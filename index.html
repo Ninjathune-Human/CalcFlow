@@ -1422,6 +1422,7 @@ function inkScripts(sn, bb, H) { // groupes de traits en position haute, à droi
   const isS = (r, i) => {
     if (r.h > .65 * H || r.w > .9 * H || r.cy > top + .33 * H) return false;
     if (r.w < .25 * H && r.h < .25 * H && bb.some((o, k) => k !== i && o.x0 < r.x1 && o.x1 > r.x0)) return false; // point d'un ÷, d'un % ou d'un :
+    if (bb.some((o, k) => k !== i && o.h > .65 * H && o.cy > r.cy && r.x0 < o.cx && Math.min(r.x1, o.x1) - Math.max(r.x0, o.x0) >= .5 * r.w)) return false; // barre d'un 5 ou d'un 7 écrite à part
     return big.some(o => o.x1 <= r.cx + .2 * H && r.cx - o.x1 < H);
   };
   const sc = bb.map((r, i) => isS(r, i) ? i : -1).filter(i => i >= 0).sort((u, v) => bb[u].cx - bb[v].cx);
