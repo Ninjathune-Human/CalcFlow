@@ -1294,7 +1294,7 @@ const pctx = pred.getContext('2d', {desynchronized:true});
 const K = 3; // le tracé part agrandi : les entiers gardent la finesse du Pencil
 const INK_URL = 'https://inputtools.google.com/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8';
 let strokes = [], pen = null, pid = null, sendGen = 0, ctrl = null, penAt = -1e9;
-const dbg = {root:'', down:0, palm:0, btn:0, orphan:0, cancel:0, emptyCo:0, pts:0, type:'-', last:''}; // diagnostic : appui long sur le crayon
+const dbg = {cand:'', root:'', down:0, palm:0, btn:0, orphan:0, cancel:0, emptyCo:0, pts:0, type:'-', last:''}; // diagnostic : appui long sur le crayon
 const hud = document.createElement('div'); hud.id = 'inkhud'; hud.hidden = true; ink.after(hud);
 function hudDraw() {
   if (hud.hidden) return;
@@ -1321,17 +1321,10 @@ penBtn.addEventListener('click', () => { if (penLP === -1) { penLP = 0; return; 
 // aucune résolution automatique : le calcul est reconnu et résolu uniquement à l'appui sur =
 const GLYPH = {'x':'×','X':'×','*':'×','·':'×','✕':'×','/':'÷',':':'÷','-':'−','–':'−','—':'−',',':'.','O':'0','o':'0','l':'1','I':'1','|':'1','t':'+','T':'+','†':'+','＋':'+','S':'5','s':'5','B':'8','Z':'2','z':'2','g':'9','q':'9','_':'−','‒':'−'};
 const GKEY = {'+':'add','−':'sub','×':'mul','÷':'div','(':'lp',')':'rp','%':'pct','.':'dec'};
-function inkClean(t) { return [...t].map(ch => GLYPH[ch] || ch).filter(ch => /[0-9+−×÷().%=]/.test(ch)).join(''); }
-const WELL = /^[(−]*\d[\d.]*%?(?:\)*[+−×÷][(−]*\d[\d.]*%?)*\)*=?$/;
 const balanced = t => { let d = 0; for (const ch of t) { d += ch === '(' ? 1 : ch === ')' ? -1 : 0; if (d < 0) return false; } return d === 0; };
-function inkPick(c) { // meilleur candidat : calcul bien formé et sans caractère écarté, puis bien formé, puis lisible
-  const raw = c.map(t => t.replace(/\s/g, '')), cl = raw.map(inkClean);
-  const good = i => WELL.test(cl[i]) && balanced(cl[i]);
-  let i = cl.findIndex((t, k) => good(k) && t.length === raw[k].length);
-  if (i < 0) i = cl.findIndex((t, k) => good(k));
-  if (i < 0) i = cl.findIndex(t => /\d/.test(t));
-  return i < 0 ? '' : cl[i];
-}
+const openFn = t => t.replace(/(sqrt|cbrt|sin|cos|tan|ln|log)\(/g, '(');
+function closeParens(t) { const u = openFn(t); let d = 0; for (const ch of u) { d += ch === '(' ? 1 : ch === ')' ? -1 : 0; if (d < 0) return t; } return t + ')'.repeat(d); }
+const validCalc = t => /[\dπ]/.test(t) && balanced(openFn(t));
 const FKEY = {'sqrt(':'sqrt', 'cbrt(':'cbrt', 'sin(':'sin', 'cos(':'cos', 'tan(':'tan', 'ln(':'ln', 'log(':'log'};
 const TKEY = Object.assign({'π':'pi', '!':'fact', '^':'pow'}, GKEY);
 function inkPlay(txt, x, y) {
@@ -1404,10 +1397,12 @@ function inkRoot(sn, bb, H) { // racine la plus à gauche : {R, cov, idx, x0, x1
     const cov = o.filter(j => bb[j].cx > run.x0 - .1 * H && bb[j].cx < run.x1 + .45 * H && bb[j].cy > L + .1 * H && bb[j].y0 > L - .6 * H);
     if (!cov.some(j => bb[j].h >= .3 * H)) { why = 'vinculum sans radicande'; continue; }
     if (o.some(j => !cov.includes(j) && bb[j].h >= .35 * H && bb[j].cx > run.x0 && bb[j].cx < run.x1 && bb[j].cy < L - .2 * H)) { why = 'fraction'; continue; }
+    if (whole && o.some(j => bb[j].y0 < L - .35 * H && bb[j].y1 > L + .3 * H && bb[j].cx > run.x0 + .1 * H && bb[j].cx < run.x1 - .1 * H)) { why = 'trait qui traverse (t, +)'; continue; } // la barre d'un t, d'un f ou d'un + n'est pas un vinculum
     const R = [i]; let lx0 = tail ? Math.min(b.x0, run.x0) : run.x0;
-    if (whole) { // coche écrite à part
-      const tick = o.filter(j => !cov.includes(j) && bb[j].h >= .3 * H && bb[j].x1 >= run.x0 - .7 * H && bb[j].x1 <= run.x0 + .4 * H && bb[j].cx < run.x0 + .25 * H).sort((u, v) => bb[v].x1 - bb[u].x1)[0];
-      if (tick !== undefined) { R.push(tick); lx0 = Math.min(lx0, bb[tick].x0); }
+    if (whole) { // coche écrite à part : obligatoire (sinon le haut d'un π ou la barre d'un t serait pris pour une racine)
+      const tick = o.filter(j => !cov.includes(j) && bb[j].h >= .3 * H && bb[j].w <= .7 * H && bb[j].y0 >= L - .3 * H && bb[j].y0 <= L + .3 * H && bb[j].x1 >= run.x0 - .35 * H && bb[j].x1 <= run.x0 + .25 * H && bb[j].cx < run.x0 + .1 * H).sort((u, v) => bb[v].x1 - bb[u].x1)[0];
+      if (tick === undefined) { why = 'vinculum sans coche'; continue; }
+      R.push(tick); lx0 = Math.min(lx0, bb[tick].x0);
     }
     const inR = j => R.includes(j) || cov.includes(j);
     const idx = o.filter(j => !inR(j) && bb[j].h <= .65 * H && bb[j].cx >= lx0 - 1.2 * H && bb[j].cx <= lx0 + .6 * H && bb[j].cy >= L - .6 * H && bb[j].cy <= L + .5 * H);
@@ -1422,7 +1417,6 @@ function inkScripts(sn, bb, H) { // groupes de traits en position haute, à droi
   const isS = (r, i) => {
     if (r.h > .65 * H || r.w > .9 * H || r.cy > top + .33 * H) return false;
     if (r.w < .25 * H && r.h < .25 * H && bb.some((o, k) => k !== i && o.x0 < r.x1 && o.x1 > r.x0)) return false; // point d'un ÷, d'un % ou d'un :
-    if (bb.some((o, k) => k !== i && o.h > .65 * H && o.cy > r.cy && r.x0 < o.cx && Math.min(r.x1, o.x1) - Math.max(r.x0, o.x0) >= .5 * r.w)) return false; // barre d'un 5 ou d'un 7 écrite à part
     return big.some(o => o.x1 <= r.cx + .2 * H && r.cx - o.x1 < H);
   };
   const sc = bb.map((r, i) => isS(r, i) ? i : -1).filter(i => i >= 0).sort((u, v) => bb[u].cx - bb[v].cx);
@@ -1470,10 +1464,11 @@ function inkLeaf(t) { // texte reconnu -> alphabet du calcul ; compte ce qui a d
 }
 async function inkLeafReco(sn, signal) {
   let best = '';
-  for (const t of await inkReco(sn, signal)) { const r = inkLeaf(t); if (/[\dπ]/.test(r.s) && !r.dropped) return r.s; if (!best && r.s) best = r.s; }
+  const cs = await inkReco(sn, signal); dbg.cand = cs.slice(0, 3).join(' | ');
+  for (const t of cs) { const r = inkLeaf(t); if (/[\dπ]/.test(r.s) && !r.dropped) return r.s; if (!best && r.s) best = r.s; }
   return best;
 }
-function inkDivs(bb, H, sn) { // ÷ (barre et deux points), : (deux points superposés) ou / ; renvoie les signes trouvés, le plus à gauche d'abord
+function inkDivs(bb, H) { // ÷ (barre et deux points) ou : (deux points superposés) ; renvoie les signes trouvés, le plus à gauche d'abord
   const tall = bb.filter(r => r.h >= .75 * H), top = tall.length ? Math.min(...tall.map(r => r.y0)) : 0;
   const tiny = r => r.w <= .3 * H && r.h <= .3 * H, used = new Set(), out = [];
   const alone = (ids, x0, x1) => !bb.some((o, k) => !ids.includes(k) && o.x0 < x1 && o.x1 > x0); // rien d'autre au-dessus ou en dessous
@@ -1494,20 +1489,6 @@ function inkDivs(bb, H, sn) { // ÷ (barre et deux points), : (deux points super
     if (mid < top + .25 * H || mid > top + .75 * H || !alone(ids, Math.min(a.x0, bb[j].x0), Math.max(a.x1, bb[j].x1))) return;
     ids.forEach(k => used.add(k)); out.push({ids, x0:Math.min(a.x0, bb[j].x0), x1:Math.max(a.x1, bb[j].x1), cx:(a.cx + bb[j].cx) / 2});
   });
-  bb.forEach((b, i) => { // / : trait droit qui monte vers la droite (25° à 70°), haut d'au moins 0,7 chiffre ; « 1/3 » en ligne comme en fraction
-    if (used.has(i) || b.h < .7 * H) return;
-    const st = sn[i], [p, q] = st[0].y > st[st.length - 1].y ? [st[0], st[st.length - 1]] : [st[st.length - 1], st[0]]; // p en bas, q en haut
-    const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy);
-    if (dx <= 0 || -dy < .47 * dx || -dy > 2.75 * dx) return;
-    const d = r => ((r.x - p.x) * dy - (r.y - p.y) * dx) / len, t = r => ((r.x - p.x) * dx + (r.y - p.y) * dy) / (len * len); // d > 0 : en haut à gauche du trait
-    if (st.some(r => Math.abs(d(r)) > Math.max(3, .1 * len))) return; // trait courbe : 1, parenthèse
-    const end = (o, e) => e.x >= o.x0 - .15 * H && e.x <= o.x1 + .15 * H && e.y >= o.y0 - .2 * H && e.y <= o.y1 + .2 * H;
-    if (bb.some((o, k) => k !== i && o.h <= .5 * o.w && (end(o, p) || end(o, q)))) return; // barre posée sur une extrémité : 7, 4 ou racine
-    if (sn.some((o, k) => { if (k === i) return false; let a = 0, z = 0; for (const r of o) { const u = t(r); if (u < 0 || u > 1) continue; a = Math.max(a, d(r)); z = Math.min(z, d(r)); } return a > .1 * H && z < -.1 * H; })) return; // trait qui le croise : ×
-    const loop = (o, k, s) => { const w = sn[k], m = Math.max(o.w, o.h); return k !== i && m <= .5 * b.h && Math.hypot(w[0].x - w[w.length - 1].x, w[0].y - w[w.length - 1].y) <= .35 * m && o.cx >= b.x0 - .3 * H && o.cx <= b.x1 + .3 * H && o.cy >= b.y0 - .3 * H && o.cy <= b.y1 + .3 * H && s * d({x:o.cx, y:o.cy}) > 0; };
-    if (bb.some((o, k) => loop(o, k, 1)) && bb.some((o, k) => loop(o, k, -1))) return; // deux petites boucles de part et d'autre : %
-    used.add(i); out.push({ids:[i], x0:b.x0, x1:b.x1, cx:b.cx, at:y => p.x + (Math.min(p.y, Math.max(q.y, y)) - p.y) * dx / dy}); // frontière : le trait, prolongé à la verticale au-delà de ses bouts
-  });
   return out.sort((u, v) => u.cx - v.cx);
 }
 async function inkParse(sn, signal, depth = 0) {
@@ -1525,10 +1506,10 @@ async function inkParse(sn, signal, depth = 0) {
       const root = !n || n === '2' ? 'sqrt(' + rad + ')' : n === '3' ? 'cbrt(' + rad + ')' : '(' + rad + ')^(1/' + n + ')';
       return glue(glue(l, root), r);
     }
-    const dv = inkDivs(bb, H, sn);
+    const dv = inkDivs(bb, H);
     if (dv.length) {
-      const ids = new Set(dv[0].ids), rest = bb.map((_, i) => i).filter(i => !ids.has(i)), xs = dv[0].at || (() => dv[0].cx);
-      const ls = rest.filter(i => bb[i].cx < xs(bb[i].cy)), rs = rest.filter(i => bb[i].cx >= xs(bb[i].cy));
+      const ids = new Set(dv[0].ids), rest = bb.map((_, i) => i).filter(i => !ids.has(i));
+      const ls = rest.filter(i => bb[i].cx < dv[0].cx), rs = rest.filter(i => bb[i].cx >= dv[0].cx);
       if (ls.length && rs.length) {
         dbg.root = 'division ✓';
         const [l, r] = await Promise.all([sub(ls), sub(rs)]);
@@ -1569,13 +1550,13 @@ async function inkSend() {
   if (ctrl) ctrl.abort(); ctrl = new AbortController();
   const pts = sn.flat(), x = Math.min(...pts.map(q => q.cx)), y = Math.min(...pts.map(q => q.cy));
   try {
-    let txt = await inkParse(sn, ctrl.signal);
+    let txt = closeParens(await inkParse(sn, ctrl.signal));
     if (gen !== sendGen) return; // du nouveau a été écrit entre-temps : cette réponse est périmée
-    dbg.last = (dbg.root ? dbg.root + '\n' : '') + 'lu : ' + txt;
-    if (!/[\dπ]/.test(txt) || !balanced(txt.replace(/(sqrt|cbrt|sin|cos|tan|ln|log)\(/g, '('))) { // analyse 2D sans suite : lecture à plat du tracé entier
-      const c = await inkReco(sn, ctrl.signal);
+    dbg.last = (dbg.root ? dbg.root + '\n' : '') + 'google : ' + dbg.cand + '\nlu : ' + txt;
+    if (!validCalc(txt)) { // analyse 2D sans suite : lecture à plat du tracé entier
+      txt = closeParens(await inkLeafReco(sn, ctrl.signal));
       if (gen !== sendGen) return;
-      txt = inkPick(c); dbg.last += '\nà plat : ' + c.slice(0, 3).join(' | ') + '  →  ' + txt;
+      dbg.last += '\nà plat : ' + dbg.cand + '  →  ' + txt;
     }
     hudDraw();
     inkClear();
