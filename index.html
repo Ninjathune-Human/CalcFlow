@@ -42,6 +42,7 @@ button{font:inherit;color:inherit}
 #inkp{pointer-events:none!important}
 body.pen #ink{pointer-events:auto;cursor:crosshair}
 #inkp{z-index:5}
+#inkhud{grid-area:canvas;align-self:end;justify-self:start;z-index:6;margin:8px 12px;padding:6px 10px;border-radius:10px;background:rgba(0,0,0,.72);color:#8e8e93;font:11px/1.45 ui-monospace,Menlo,monospace;white-space:pre;pointer-events:none;max-width:calc(100% - 24px);overflow:hidden}
 .ico[aria-pressed="true"]{background:#0a84ff;color:#fff}
 #app{height:100%;display:grid;grid-template:"bar" auto "canvas" minmax(0,1fr) "kbd" 40% / minmax(0,1fr);
   padding-inline:env(safe-area-inset-left,0px) env(safe-area-inset-right,0px)}
@@ -1292,6 +1293,12 @@ const pctx = pred.getContext('2d', {desynchronized:true});
 const K = 3; // le tracé part agrandi : les entiers gardent la finesse du Pencil
 const INK_URL = 'https://inputtools.google.com/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8';
 let strokes = [], pen = null, pid = null, sendGen = 0, ctrl = null, penAt = -1e9;
+const dbg = {down:0, palm:0, btn:0, orphan:0, cancel:0, emptyCo:0, pts:0, type:'-', last:''}; // diagnostic : appui long sur le crayon
+const hud = document.createElement('div'); hud.id = 'inkhud'; hud.hidden = true; ink.after(hud);
+function hudDraw() {
+  if (hud.hidden) return;
+  hud.textContent = `traits ${strokes.length}${pen ? '+1' : ''} · points ${dbg.pts} · appuis ${dbg.down} · ${dbg.type}\npaume ${dbg.palm} · bouton ${dbg.btn} · orphelins ${dbg.orphan} · annulés ${dbg.cancel} · fusion vide ${dbg.emptyCo}\n${dbg.last}`;
+}
 function inkSize() {
   const r = ink.getBoundingClientRect(), d = window.devicePixelRatio || 1;
   for (const [cv, cx] of [[ink, ictx], [pred, pctx]]) {
@@ -1305,9 +1312,12 @@ function setPen(on) {
   document.body.classList.toggle('pen', on); penBtn.setAttribute('aria-pressed', on);
   if (on) inkSize(); else inkClear();
 }
-penBtn.addEventListener('click', () => { if (cellEd) leaveCell(); setPen(!document.body.classList.contains('pen')); });
+let penLP = 0;
+penBtn.addEventListener('pointerdown', () => { penLP = setTimeout(() => { penLP = -1; hud.hidden = !hud.hidden; hudDraw(); }, 700); });
+for (const t of ['pointerup', 'pointercancel', 'pointerleave']) penBtn.addEventListener(t, () => clearTimeout(penLP));
+penBtn.addEventListener('click', () => { if (penLP === -1) { penLP = 0; return; } if (cellEd) leaveCell(); setPen(!document.body.classList.contains('pen')); });
 // aucune résolution automatique : le calcul est reconnu et résolu uniquement à l'appui sur =
-const GLYPH = {'x':'×','X':'×','*':'×','·':'×','✕':'×','/':'÷',':':'÷','-':'−','–':'−','—':'−',',':'.','O':'0','o':'0','l':'1','I':'1','|':'1'};
+const GLYPH = {'x':'×','X':'×','*':'×','·':'×','✕':'×','/':'÷',':':'÷','-':'−','–':'−','—':'−',',':'.','O':'0','o':'0','l':'1','I':'1','|':'1','t':'+','T':'+','†':'+','＋':'+','S':'5','s':'5','B':'8','Z':'2','z':'2','g':'9','q':'9','_':'−','‒':'−'};
 const GKEY = {'+':'add','−':'sub','×':'mul','÷':'div','(':'lp',')':'rp','%':'pct','.':'dec'};
 function inkClean(t) { return [...t].map(ch => GLYPH[ch] || ch).filter(ch => /[0-9+−×÷().%=]/.test(ch)).join(''); }
 const WELL = /^[(−]*\d[\d.]*%?(?:\)*[+−×÷][(−]*\d[\d.]*%?)*\)*=?$/;
@@ -1351,6 +1361,7 @@ async function inkSend() {
     if (gen !== sendGen) return; // du nouveau a été écrit entre-temps : cette réponse est périmée, la reconnaissance repartira avec tout le tracé
     if (j[0] !== 'SUCCESS') throw new Error('reco');
     const txt = inkPick(j[1][0][1] || []);
+    dbg.last = 'lu : ' + (j[1][0][1] || []).slice(0, 3).join(' | ') + '  →  ' + txt; hudDraw();
     inkClear();
     if (/\d/.test(txt)) inkPlay(txt, x, y); else penNope();
   } catch (err) {
@@ -1366,10 +1377,11 @@ const pt = (ev, r) => ({x:ev.clientX - r.left, y:ev.clientY - r.top, t:ev.timeSt
 const wOf = (a, b) => 1.3 + (a.p + b.p) * 1.9;
 function seg(cx, a, b) { cx.lineWidth = wOf(a, b); cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.stroke(); }
 ink.addEventListener('pointerdown', ev => {
-  if (ev.button > 0) return;
-  if (pid !== null) inkEnd(); // un relâché perdu ne doit jamais bloquer le trait suivant : on clôt l'ancien et on repart
+  dbg.down++; dbg.type = ev.pointerType;
+  if (ev.button > 0) { dbg.btn++; hudDraw(); return; }
+  if (pid !== null) { dbg.orphan++; inkEnd(); } // un relâché perdu ne doit jamais bloquer le trait suivant : on clôt l'ancien et on repart
   if (ev.pointerType === 'pen') penAt = ev.timeStamp;
-  else if (ev.timeStamp - penAt < 3000) return; // paume posée pendant l'écriture au stylet
+  else if (ev.timeStamp - penAt < 3000) { dbg.palm++; hudDraw(); return; } // paume posée pendant l'écriture au stylet
   ev.preventDefault();
   sendGen++; if (ctrl) ctrl.abort(); // on écrit encore : toute reconnaissance en cours est périmée
   pid = ev.pointerId; pen = [pt(ev, ink.getBoundingClientRect())];
@@ -1382,11 +1394,13 @@ ink.addEventListener('pointermove', ev => {
   if (ev.pointerId !== pid) return;
   const r = ink.getBoundingClientRect();
   const co = ev.getCoalescedEvents ? ev.getCoalescedEvents() : [];
+  if (!co.length) dbg.emptyCo++;
   for (const e of (co.length ? co : [ev])) { // Safari renvoie parfois une liste vide : le point courant compte alors
     const q = pt(e, r), a = pen[pen.length - 1];
     if (Math.abs(q.x - a.x) + Math.abs(q.y - a.y) < .4) continue;
-    seg(ictx, a, q); pen.push(q);
+    seg(ictx, a, q); pen.push(q); dbg.pts++;
   }
+  hudDraw();
   pctx.clearRect(0, 0, pred.width, pred.height);
   if (ev.getPredictedEvents) { let a = pen[pen.length - 1]; for (const e of ev.getPredictedEvents()) { const q = pt(e, r); seg(pctx, a, q); a = q; } }
 });
@@ -1394,15 +1408,19 @@ function inkEnd() {
   if (pid === null) return;
   pctx.clearRect(0, 0, pred.width, pred.height);
   if (pen.length < 2) pen.push({...pen[0], t:pen[0].t + 1}); // un point (virgule, point) reste un trait
-  strokes.push(pen); pen = pid = null;
+  strokes.push(pen); pen = pid = null; hudDraw();
 }
 const mine = ev => pid !== null && ev.pointerId === pid;
 ink.addEventListener('pointerup', ev => { if (mine(ev)) inkEnd(); });
-ink.addEventListener('pointercancel', ev => { if (mine(ev)) inkEnd(); });
-ink.addEventListener('lostpointercapture', ev => { if (mine(ev)) inkEnd(); });
+ink.addEventListener('pointercancel', ev => { if (mine(ev)) { dbg.cancel++; inkEnd(); } });
 addEventListener('pointerup', ev => { if (mine(ev)) inkEnd(); }); // relâché hors du calque
 ink.addEventListener('contextmenu', ev => ev.preventDefault());
-addEventListener('resize', () => { if (document.body.classList.contains('pen')) { inkClear(); inkSize(); } });
+for (const t of ['touchstart', 'touchmove']) ink.addEventListener(t, ev => ev.preventDefault(), {passive:false}); // iOS : ni défilement, ni loupe, ni sélection pendant l'écriture
+function inkRedraw() { // la toile suit la taille de la feuille (clavier, fx, rotation) sans perdre le tracé
+  inkSize();
+  for (const st of strokes.concat(pen ? [pen] : [])) for (let i = 1; i < st.length; i++) seg(ictx, st[i - 1], st[i]);
+}
+if (window.ResizeObserver) new ResizeObserver(() => { if (document.body.classList.contains('pen')) inkRedraw(); }).observe(ink);
 
 /* Glisser-déposer d'un résultat : la vignette se soulève et suit le doigt au pixel près ;
    dans un calcul, les termes s'écartent pour ouvrir la place ; sur la feuille, un repère montre où elle se calera. */
