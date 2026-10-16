@@ -13,7 +13,7 @@ Calculatrice à feuille libre, dans l'esprit de Tydlig, à l'allure de la Calcul
 - **Calcul entre cellules** : on sélectionne une cellule, on appuie sur une opération, on approche une seconde cellule, puis `=`.
 - **Devises et cryptos** : un appui long sur une cellule crée sa conversion, liée à la source. Taux en direct, avec un jeu de taux intégré hors ligne.
 - **Partout** : clavier sur 40 % de l'écran sur iPhone et sur un tiers sur iPad, fonctions scientifiques dépliables (touche fx), clavier à droite en paysage, clavier physique sur ordinateur. Tactile, stylet et souris.
-- **Écriture manuscrite** : le crayon de la barre active l'écriture au doigt, au stylet ou à la souris. Le crayon passe au bleu ; on écrit sans limite de temps, et `=` reconnaît (écriture de Google, connexion requise) puis résout le calcul, là où l'on a écrit. Racines (√ avec vinculum, indice 3 pour la racine cubique), exposants en position haute, `sin`, `cos`, `tan`, `ln`, `log`, `π` et `!` s'écrivent à la main.
+- **Écriture manuscrite** : le crayon de la barre active l'écriture au doigt, au stylet ou à la souris. Le crayon passe au bleu ; on écrit sans limite de temps, et `=` reconnaît (écriture de Google, connexion requise) puis résout le calcul, là où l'on a écrit. Racines (√ avec vinculum, indice 3 pour la racine cubique), exposants en position haute, `sin`, `cos`, `tan`, `ln`, `log`, `π` et `!` s'écrivent à la main. En mode écriture, un doigt posé sur un résultat le déplace comme d'habitude (le stylet continue d'écrire). Une écriture qui commence par une opération (`× 3`), posée à droite de la ligne en cours (un résultat déplacé par exemple), en est la suite.
 - **Sauvegarde automatique** dans le navigateur, annulation pas à pas.
 
 ## Gestes
