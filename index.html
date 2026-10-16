@@ -1424,16 +1424,20 @@ function inkPlay(txt, x, y, y1 = y) {
 }
 /* Virgule décimale : un petit trait bas, entre deux chiffres, est lu par la géométrie et non par Google (qui le prend
    pour un point, une apostrophe ou rien). Le tracé est coupé à chaque virgule ; chaque morceau est reconnu à part. */
+function inkFrame(bb) { // cadre de la ligne : sommet T, base B, hauteur H d'un chiffre, par médianes (une hampe ou un trait écrit trop bas ne le déforment pas)
+  const hs = bb.map(r => r.y1 - r.y0), mh = Math.max(...hs), ref = med(hs.filter(h => h >= .5 * mh));
+  const big = bb.filter(r => r.y1 - r.y0 >= .8 * ref), T = med(big.map(r => r.y0)), B = med(big.map(r => r.y1));
+  return {T, B, H:B - T > .5 * ref ? B - T : ref, big, near:bb.filter(r => r.y1 - r.y0 >= .5 * ref)};
+}
 function inkSplit(sn) {
   const bb = sn.map(st => { const xs = st.map(q => q.x), ys = st.map(q => q.y); return {x0:Math.min(...xs), x1:Math.max(...xs), y0:Math.min(...ys), y1:Math.max(...ys)}; });
-  const hmax = Math.max(...bb.map(r => r.y1 - r.y0)), big = bb.filter(r => r.y1 - r.y0 >= .6 * hmax);
-  if (!big.length || hmax < 24) return null;
-  const top = Math.min(...big.map(r => r.y0)), H = Math.max(...big.map(r => r.y1)) - top;
-  const isMark = (r, i) => {
+  if (Math.max(...bb.map(r => r.y1 - r.y0)) < 24) return null;
+  const {T, B, H, near} = inkFrame(bb);
+  const isMark = (r, i) => { // petit, dans la moitié basse de la ligne, entre deux chiffres
     const w = r.x1 - r.x0, h = r.y1 - r.y0, cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
-    if (w > .32 * H || cy < top + .6 * H || (h > .45 * H && !(h <= .85 * H && w <= .25 * H && r.y0 >= top + .25 * H))) return false; // virgule à longue queue : elle démarre sous le haut des chiffres, contrairement à un 1
+    if (w > .35 * H || h > .85 * H || r.y0 < T + .2 * H || cy < T + .5 * H || r.y1 > B + .5 * H) return false; // une virgule démarre sous le haut des chiffres, contrairement à un 1
     if (bb.some((o, k) => k !== i && o.x0 < r.x1 && o.x1 > r.x0)) return false; // un autre trait au-dessus ou en dessous (÷, =, %, :) : ce n'est pas une virgule
-    const left = big.some(o => o !== r && o.x1 <= cx + .1 * H && cx - o.x1 < H), right = big.some(o => o !== r && o.x0 >= cx - .1 * H && o.x0 - cx < H);
+    const left = near.some(o => o !== r && o.x1 <= cx + .1 * H && cx - o.x1 < 1.2 * H), right = near.some(o => o !== r && o.x0 >= cx - .1 * H && o.x0 - cx < 1.2 * H); // voisins : tout trait au moins à demi-hauteur
     return left && right;
   };
   const marks = bb.map((r, i) => isMark(r, i) ? i : -1).filter(i => i >= 0);
@@ -1627,6 +1631,7 @@ function inkLocal(sn) { // {s : texte de calcul ou '', raw : diagnostic}
       if (best[i] === Infinity) continue;
       const ids = ord.slice(i, j); let reach = bb[ids[0]].x1; // les traits d'un même caractère se recouvrent horizontalement
       if (ids.slice(1).some(k => { const ok = bb[k].x0 <= reach + .06 * H; reach = Math.max(reach, bb[k].x1); return !ok; })) continue;
+      if (ids.length > 1 && (ids.some(k => inkDiag(inkLine(sn[k])) && bb[k].h >= .9 * H) || Math.max(...ids.map(k => bb[k].x1)) - Math.min(...ids.map(k => bb[k].x0)) > 1.3 * H)) continue; // une barre oblique ou une trop grande largeur ne se fond pas dans un caractère
       const f = glyph(ids.map(k => sn[k])); if (!f || f.w > 2.2 * H) continue;
       const r = tClass(f, f.h / H, (f.cy - C) / H, R); if (r.k == null) continue;
       const c = best[i] + r.d + .10; if (c < best[j]) { best[j] = c; from[j] = i; pick[j] = r; }
@@ -1767,14 +1772,20 @@ function inkDivs(bb, H) { // ÷ (barre et deux points) ou : (deux points superpo
   });
   return out.sort((u, v) => u.cx - v.cx);
 }
-function inkSlash(sn, bb) { // grande barre oblique rectiligne, bien plus haute que les chiffres : fraction a/b ; renvoie les indices à gauche et à droite
+function inkLine(st) { // trait rectiligne ? {a, z, dx, dy, L, ok}
+  const a = st[0], z = st[st.length - 1], dx = z.x - a.x, dy = z.y - a.y, L = Math.hypot(dx, dy);
+  let P = 0; for (let k = 1; k < st.length; k++) P += Math.hypot(st[k].x - st[k - 1].x, st[k].y - st[k - 1].y);
+  return {a, z, dx, dy, L, ok:L > 0 && L / P >= .92};
+}
+const inkDiag = ln => ln.ok && ln.dx * ln.dy < 0 && Math.abs(ln.dy) >= .53 * Math.abs(ln.dx) && Math.abs(ln.dy) <= 1.65 * Math.abs(ln.dx); // « / » : montée de 28° à 58°
+function inkSlash(sn, bb) { // un trait rectiligne vers 45°, aussi long qu'un chiffre, est toujours une division : tout ce qui est à sa gauche / à sa droite
+  const ln = sn.map(inkLine);
   for (let i = 0; i < sn.length; i++) {
-    const st = sn[i], a = st[0], z = st[st.length - 1], dx = z.x - a.x, dy = z.y - a.y, L = Math.hypot(dx, dy);
-    let P = 0; for (let k = 1; k < st.length; k++) P += Math.hypot(st[k].x - st[k - 1].x, st[k].y - st[k - 1].y);
-    if (!L || L / P < .9 || dx * dy >= 0 || Math.abs(dy) < .6 * Math.abs(dx) || Math.abs(dy) > 3.5 * Math.abs(dx)) continue;
+    if (!inkDiag(ln[i])) continue;
     const others = bb.filter((_, k) => k !== i), ref = inkRef(others);
-    if (!ref || bb[i].h < 1.5 * ref) continue;
-    const lo = a.y > z.y ? a : z, hi = a.y > z.y ? z : a, ls = [], rs = [];
+    if (!ref || ln[i].L < 1.15 * ref) continue; // plus court : un trait de × ou de +
+    if (bb.some((o, k) => k !== i && inkDiag(ln[k]) && o.cx > bb[i].x0 && o.cx < bb[i].x1 && o.cy > bb[i].y0 && o.cy < bb[i].y1)) continue; // deux diagonales qui se croisent : un grand ×
+    const {a, z} = ln[i], lo = a.y > z.y ? a : z, hi = a.y > z.y ? z : a, ls = [], rs = [];
     bb.forEach((r, k) => { if (k !== i) (r.cx < lo.x + (r.cy - lo.y) / (hi.y - lo.y) * (hi.x - lo.x) ? ls : rs).push(k); });
     if (ls.length && rs.length) return {ls, rs};
   }
