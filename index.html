@@ -146,15 +146,15 @@ body.side #kbd{padding:12px 16px 16px 6px}
 /* ---------- Feuille de conversion ---------- */
 #scrim{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.5);opacity:0;transition:opacity .3s var(--ease)}
 #scrim.open{opacity:1}
-#conv{position:fixed;z-index:31;left:50%;bottom:0;width:min(100%,560px);height:min(88%,760px);display:flex;flex-direction:column;
+#conv,#divs{position:fixed;z-index:31;left:50%;bottom:0;width:min(100%,560px);height:min(88%,760px);display:flex;flex-direction:column;
   transform:translate(-50%,104%);transition:transform .4s var(--sheet);border-radius:24px 24px 0 0;color:var(--t1);
   background:rgba(28,28,30,.95);-webkit-backdrop-filter:blur(30px) saturate(1.6);backdrop-filter:blur(30px) saturate(1.6);
   box-shadow:0 -12px 40px rgba(0,0,0,.55),inset 0 .5px 0 rgba(255,255,255,.14);padding-bottom:env(safe-area-inset-bottom,0px)}
-#conv.open{transform:translate(-50%,0)}
-body.regular:not(.side) #conv{height:min(66%,720px)}
-body.side #conv{left:auto;right:0;top:0;bottom:0;height:auto;width:var(--kw);transform:translateX(104%);border-radius:24px 0 0 24px;
+#conv.open,#divs.open{transform:translate(-50%,0)}
+body.regular:not(.side) #conv,body.regular:not(.side) #divs{height:min(66%,720px)}
+body.side #conv,body.side #divs{left:auto;right:0;top:0;bottom:0;height:auto;width:var(--kw);transform:translateX(104%);border-radius:24px 0 0 24px;
   padding-top:env(safe-area-inset-top,0px)}
-body.side #conv.open{transform:none}
+body.side #conv.open,body.side #divs.open{transform:none}
 .grab{flex:none;width:36px;height:5px;border-radius:3px;background:var(--t3);margin:8px auto 0}
 body.side .grab{visibility:hidden}
 .sh-head{display:flex;align-items:center;justify-content:space-between;padding:8px 16px 10px;touch-action:none}
@@ -259,12 +259,48 @@ button.tg-sec{cursor:pointer}
 .sw i::after{content:"";position:absolute;left:2px;top:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.35);transition:transform .25s var(--spring)}
 .sw[aria-checked="true"] i{background:#30d158}
 .sw[aria-checked="true"] i::after{transform:translateX(20px)}
+/* ---------- Division posée ---------- */
+#divs{background:var(--s1)}
+.dv-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:0 20px 24px;container-type:inline-size}
+.dv-res{margin:0 0 12px;font-size:24px;font-weight:300;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.dv-res b{font-weight:500;color:var(--k-op)}
+.dv-seg{display:flex;width:max-content;padding:2px;margin:0 0 4px;border-radius:9px;background:rgba(118,118,128,.24)}
+.dv-seg[hidden]{display:none}
+.dv-seg button{height:30px;padding:0 16px;border:0;border-radius:7px;background:none;font-size:13px;font-weight:500;cursor:pointer;transition:background-color .2s var(--ease)}
+.dv-seg button[aria-checked="true"]{background:#636366;box-shadow:0 3px 8px rgba(0,0,0,.12)}
+#dvFig{display:flex;flex-wrap:wrap;align-items:flex-start;gap:14px 32px;padding:14px 0 16px;border-bottom:.5px solid var(--line)}
+#dvFig.stick{position:sticky;top:0;z-index:1;background:rgb(28,28,30)}
+#dvSvg{flex:none;width:auto;height:auto;max-width:100%;max-height:32vh}
+#dvSvg text{font:300 26px var(--font);font-variant-numeric:tabular-nums;text-anchor:middle;fill:var(--t1)}
+#dvSvg .sub{fill:#30d158}
+#dvSvg .quo{fill:var(--k-op);font-weight:400}
+#dvSvg .pad{fill:var(--t3)}
+#dvSvg .rest{font-weight:500}
+#dvSvg path{fill:none;stroke-linecap:round;stroke-linejoin:round}
+#dvSvg .pot{stroke:var(--t1);stroke-width:1.6}
+#dvSvg .ul{stroke:var(--t2);stroke-width:1.3}
+#dvSvg .arr{stroke:#64d2ff;stroke-width:1.3;opacity:.75}
+#dvFig [data-s]{transition:opacity .25s var(--ease)}
+#dvFig.focus [data-s]:not(.hl){opacity:.14}
+.dv-tab{font-size:13px;line-height:1.6;color:var(--t3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.dv-tab .used{color:var(--t2)}
+.dv-tab .used b{font-weight:500;color:#30d158}
+@container (max-width:440px){.dv-tab{display:grid;grid-template-columns:repeat(3,max-content);column-gap:20px;font-size:12px}}
+.dv-hint{margin:12px 0 2px;font-size:13px;color:var(--t3)}
+.dv-steps{list-style:none;margin:0;padding:0;counter-reset:st}
+.dv-steps li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:3px 10px;margin:0 -10px;padding:12px 10px;border-radius:12px;cursor:pointer;transition:background-color .2s var(--ease)}
+.dv-steps li::before{counter-increment:st;content:counter(st);grid-row:span 2;padding-top:1px;font-size:13px;font-weight:500;color:var(--t3);font-variant-numeric:tabular-nums}
+@media (hover:hover){.dv-steps li:hover{background:rgba(118,118,128,.12)}}
+.dv-steps li.on{background:rgba(118,118,128,.22)}
+.dv-steps b{font-size:15px;font-weight:600}
+.dv-steps span{font-size:15px;line-height:1.45;color:var(--t2)}
+.dv-steps li.on span{color:var(--t1)}
 
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
   .caret{animation:none}
 }
-@media (prefers-reduced-transparency:reduce){#conv{background:var(--s1);-webkit-backdrop-filter:none;backdrop-filter:none}}
+@media (prefers-reduced-transparency:reduce){#conv,#divs{background:var(--s1);-webkit-backdrop-filter:none;backdrop-filter:none}}
 </style>
 
 </head>
@@ -308,6 +344,21 @@ button.tg-sec{cursor:pointer}
   <div class="sh-foot">
     <div class="rates"><button class="ico" id="refresh" type="button" aria-label="Actualiser les taux"><svg class="i" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></svg></button><span id="rateInfo"></span></div>
     <div class="acts"><button class="txt" id="convRemove" type="button">Retirer</button><button class="cta" id="convApply" type="button">Convertir</button></div>
+  </div>
+</div>
+
+<div id="divs" role="dialog" aria-modal="true" aria-labelledby="dvTitle" hidden>
+  <div class="grab" aria-hidden="true"></div>
+  <div class="sh-head">
+    <h2 id="dvTitle">Division posée</h2>
+    <button class="ico" id="dvClose" type="button" aria-label="Fermer"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+  <div class="dv-body" id="dvBody">
+    <p class="dv-res" id="dvRes"></p>
+    <div class="dv-seg" id="dvMode" role="radiogroup" aria-label="Type de division" hidden><button type="button" role="radio" data-m="0">Entière</button><button type="button" role="radio" data-m="1">Décimale</button></div>
+    <div id="dvFig"></div>
+    <p class="dv-hint">Touchez une étape pour la retrouver sur la potence.</p>
+    <ol class="dv-steps" id="dvSteps"></ol>
   </div>
 </div>
 
@@ -2260,6 +2311,42 @@ async function inkReco(sn, signal) {
   if (j[0] !== 'SUCCESS') throw new Error('reco');
   return j[1][0][1] || [];
 }
+/* Division posée (potence) : un long trait vertical, un trait horizontal qui en part vers la droite, le dividende à gauche,
+   le diviseur au-dessus du trait horizontal et rien en dessous. Le coin peut être tracé d'un seul geste. Renvoie null sans potence. */
+function inkPotence(sn) {
+  if (sn.length < 3) return null;
+  const sz = sn.map(st => { const r = bboxOf(st); return Math.max(r.w, r.h); }).sort((a, b) => a - b), ref = sz[(sz.length - 1) >> 1];
+  const off = (st, q) => { const a = st[0], z = st[st.length - 1]; return Math.abs((z.x - a.x) * (q.y - a.y) - (z.y - a.y) * (q.x - a.x)); };
+  const dev = st => { const a = st[0], z = st[st.length - 1], L2 = (z.x - a.x) ** 2 + (z.y - a.y) ** 2 || 1; return Math.max(...st.map(q => off(st, q))) / L2; }; // écart à la corde / longueur
+  sn = sn.flatMap(st => { // coin d'un seul geste : deux segments droits
+    const r = bboxOf(st); if (r.h < 1.8 * ref || r.w < 1.2 * ref || st.length < 6) return [st];
+    let k = 0; st.forEach((q, i) => { if (off(st, q) > off(st, st[k])) k = i; });
+    const u = st.slice(0, k + 1), w = st.slice(k);
+    return u.length > 2 && w.length > 2 && dev(u) < .1 && dev(w) < .1 ? [u, w] : [st];
+  });
+  const bb = sn.map(bboxOf);
+  let V = -1, H = -1;
+  bb.forEach((r, i) => { if (r.h >= 1.8 * ref && r.w <= .25 * r.h && dev(sn[i]) < .08 && (V < 0 || r.h > bb[V].h)) V = i; });
+  if (V < 0) return null;
+  const v = bb[V];
+  bb.forEach((r, i) => { // part du trait vertical (ou le déborde un peu), dans sa moitié haute
+    if (i !== V && r.w >= 1.2 * ref && r.h <= .3 * r.w && dev(sn[i]) < .1 && r.x0 > v.cx - .4 * r.w && r.x0 < v.cx + .6 * ref && r.x1 > v.cx + ref
+      && r.cy > v.y0 - .5 * ref && r.cy < v.y0 + .6 * v.h && (H < 0 || r.w > bb[H].w)) H = i;
+  });
+  if (H < 0) return null;
+  const Y = bb[H].cy, L = [], R = [];
+  for (let i = 0; i < sn.length; i++) {
+    const r = bb[i];
+    if (i === V || i === H || Math.max(r.w, r.h) < .15 * ref) continue;
+    if (r.cx < v.cx && r.cy < Y + .5 * ref) L.push(sn[i]);
+    else if (r.cx > v.cx && r.cy < Y) R.push(sn[i]);
+    else return null; // quelque chose sous la potence : ce n'est pas une division à résoudre
+  }
+  if (!L.length || !R.length) return null;
+  const num = sts => { const r = HW.recognize(sts); return r ? [r.t].concat(r.alt).find(t => /^\d+(\.\d+)?$/.test(t)) : null; };
+  const a = num(L), b = num(R), dbg = 'division posée : ' + (a || '?') + ' | ' + (b || '?');
+  return a && b && +b ? {a, b, dbg} : {dbg};
+}
 /* Règle de trois : une grande croix, un nombre dans trois de ses cases et un x (ou rien) dans la quatrième.
    Les produits en croix sont égaux (haut-gauche × bas-droite = haut-droite × bas-gauche) : x s'en déduit,
    et le calcul s'écrit sur la feuille (par exemple 12 × 30 ÷ 4 = 90). Renvoie null s'il n'y a pas de croix. */
@@ -2299,9 +2386,14 @@ async function inkSend() {
   penBtn.classList.add('busy');
   await new Promise(r => setTimeout(r, 30)); // l'écran se met à jour avant le calcul
   if (gen !== sendGen) return;
-  let txt = '', r = null, r3 = null;
+  let txt = '', r = null, r3 = null, pd = null;
   const t0 = performance.now();
-  try { hwReady(); persSync(); r3 = inkRule3(sn); } catch (e) { r3 = null; }
+  try { hwReady(); persSync(); pd = inkPotence(sn); r3 = pd ? null : inkRule3(sn); } catch (e) { pd = r3 = null; }
+  if (pd) { // division posée : le calcul sur la feuille, la résolution pas à pas dans un volet
+    penBtn.classList.remove('busy'); dbg.last = pd.dbg; hudDraw(); inkClear(); penAt = -1e9;
+    if (pd.a) { inkPlay(pd.a + '÷' + pd.b, x, y, y1); divShow(pd.a, pd.b); } else penNope();
+    return;
+  }
   if (r3) { // règle de trois dessinée
     penBtn.classList.remove('busy'); dbg.last = r3.dbg; hudDraw(); inkClear(); penAt = -1e9;
     if (r3.t) inkPlay(r3.t, x, y, y1); else penNope();
@@ -2739,6 +2831,7 @@ kbd.addEventListener('click', ev => { if (ev.detail !== 0) return; const b = ev.
 const KMAP = {'+':'add','-':'sub','*':'mul','x':'mul','X':'mul','/':'div',':':'div','^':'pow','%':'pct','!':'fact','Enter':'eq','=':'eq',
   'Backspace':'back','Delete':'back',',':'dec','.':'dec','(':'lp',')':'rp'};
 addEventListener('keydown', ev => {
+  if (divOpen) { if (ev.key === 'Escape') { ev.preventDefault(); divClose(); } return; }
   if (convOpen) {
     if (ev.key === 'Escape') { ev.preventDefault(); if ($('#q').value) setQuery(''); else closeConv(); }
     return;
@@ -2869,7 +2962,7 @@ $('#swap').addEventListener('click', () => { [CV.from, CV.to] = [CV.to, CV.from]
 $('#convApply').addEventListener('click', () => applyConv(CV.from, CV.to));
 $('#convRemove').addEventListener('click', () => { const e = act(); if (!e.conv) return closeConv(); snap(); e.conv = null; closeConv(); render(); });
 $('#convClose').addEventListener('click', closeConv);
-scrim.addEventListener('click', () => { if (performance.now() - CV.opened > 400) closeConv(); }); // pas le relâcher de l'appui long
+scrim.addEventListener('click', () => { if (divOpen) divClose(); else if (performance.now() - CV.opened > 400) closeConv(); }); // pas le relâcher de l'appui long
 qIn.addEventListener('input', () => setQuery(qIn.value));
 qIn.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); const r = $('#list .row'); if (r) pick(r.dataset.code); qIn.blur(); } });
 $('#qx').addEventListener('click', () => { setQuery(''); qIn.focus(); });
@@ -2881,16 +2974,149 @@ $('#refresh').addEventListener('click', async () => {
 });
 
 /* Fermer la feuille d'un geste vers le bas, depuis l'encoche ou l'en-tête */
-(() => {
+for (const [sh, close] of [[cv, closeConv], [$('#divs'), divClose]]) {
   let y0 = null, dy = 0;
-  const start = ev => { if (side || ev.target.closest('button')) return; y0 = ev.clientY; dy = 0; cv.style.transition = 'none'; ev.currentTarget.setPointerCapture(ev.pointerId); };
-  const move = ev => { if (y0 == null) return; dy = Math.max(0, ev.clientY - y0); cv.style.transform = `translate(-50%,${dy}px)`; };
-  const end = () => { if (y0 == null) return; y0 = null; cv.style.transition = ''; if (dy > 90) closeConv(); else cv.style.transform = ''; };
-  for (const el of [cv.querySelector('.grab'), $('#convHead')]) {
+  const start = ev => { if (side || ev.target.closest('button')) return; y0 = ev.clientY; dy = 0; sh.style.transition = 'none'; ev.currentTarget.setPointerCapture(ev.pointerId); };
+  const move = ev => { if (y0 == null) return; dy = Math.max(0, ev.clientY - y0); sh.style.transform = `translate(-50%,${dy}px)`; };
+  const end = () => { if (y0 == null) return; y0 = null; sh.style.transition = ''; if (dy > 90) close(); else sh.style.transform = ''; };
+  for (const el of [sh.querySelector('.grab'), sh.querySelector('.sh-head')]) {
     el.addEventListener('pointerdown', start); el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
   }
-})();
+}
+
+/* ---------------- Division posée ---------------- */
+/* Le calcul à la française : a ÷ b (chaînes décimales positives). dec faux : division euclidienne (quotient entier et reste) ;
+   vrai : on poursuit après la virgule, jusqu'à un reste nul ou trois décimales au moins. Le diviseur est d'abord rendu entier. */
+function longDiv(a, b, dec) {
+  const fa = (a.split('.')[1] || '').length, fb = (b.split('.')[1] || '').length;
+  let ds = a.replace('.', '') + '0'.repeat(Math.max(0, fb - fa)), nInt = ds.length - Math.max(0, fa - fb); // dividende × 10^fb
+  while (nInt > 1 && ds[0] === '0') { ds = ds.slice(1); nInt--; }
+  const B = +b.replace('.', ''), N = ds.length, dig = i => i < N ? +ds[i] : 0;
+  if (!B || N > 15 || B > 1e8) return null;
+  if (N > nInt) dec = true;
+  let c = 0, P = dig(0);
+  const lim0 = dec ? Math.max(N - 1, nInt + 11) : N - 1;
+  while (P < B && c < lim0) P = P * 10 + dig(++c); // premier dividende partiel
+  if (P < B) return null;
+  const last = dec ? Math.max(N - 1, nInt + 2, c + 2) : N - 1, steps = [], seen = new Map();
+  let per = null;
+  for (;;) {
+    const q = Math.floor(P / B), r = P - q * B;
+    steps.push({c, P, q, prod:q * B, r});
+    if (c >= N - 1 && !per) { if (seen.has(r)) per = [seen.get(r), c]; else seen.set(r, c); } // un reste qui revient : les chiffres se répètent
+    if (c === last || (dec && c >= N - 1 && !r)) break;
+    P = r * 10 + dig(++c);
+  }
+  const c0 = steps[0].c, q0 = Math.min(c0, nInt - 1), qd = []; // colonnes du quotient : de q0 à c
+  for (let k = q0; k <= c; k++) qd.push(k < c0 ? 0 : steps[k - c0].q);
+  return {A:ds.slice(0, nInt) + (N > nInt ? ',' + ds.slice(nInt) : ''), B, ds, N, nInt, k:fb, dec, steps, c0, q0, end:c, qd,
+    Q:qd.slice(0, nInt - q0).join('') + (c >= nInt ? ',' + qd.slice(nInt - q0).join('') : ''), R:steps[steps.length - 1].r,
+    per:per && per[1] >= nInt ? qd.slice(per[0] + 1 - q0, per[1] + 1 - q0).join('') : null};
+}
+/* La potence en SVG : chaque élément porte les étapes qui l'éclairent (data-s) ; à côté, la table du diviseur. */
+function divFig(D) {
+  const FS = 26, CW = 20, LH = 34, {ds, N, nInt, B, steps, c0, q0, end} = D, last = steps.length - 1;
+  const cols = Math.max(N, end + 1), X = c => 12 + CW * (c + 1.5), Y = r => 36 + r * LH;
+  const T = [], out = [], tx = (c, r, s, cls, t) => T.push({c, r, s, cls, t});
+  for (let c = 0; c < cols; c++) tx(c, 0, c < N ? ds[c] : '0', c < N ? '' : 'pad');
+  if (cols > nInt) out.push(`<text x="${X(nInt - 1) + CW / 2}" y="${Y(0)}">,</text>`);
+  out.push(`<path d="M${X(0) - CW / 2 + 2} ${Y(0) - FS + 2}Q${(X(0) + X(c0)) / 2} ${Y(0) - FS - 9} ${X(c0) + CW / 2 - 2} ${Y(0) - FS + 2}" class="arr" data-s="0"/>`);
+  let row = 0, start = 0;
+  steps.forEach((st, j) => {
+    const t = j === last ? j + ' f' : '' + j;
+    if (j) { // chiffre abaissé, avec sa flèche depuis le dividende
+      tx(st.c, row, st.c < N ? ds[st.c] : '0', '', t);
+      const x = X(st.c), y1 = Y(row) - FS * .74 - 4;
+      out.push(`<path d="M${x} ${Y(0) + 7}V${y1}M${x - 3.5} ${y1 - 5}L${x} ${y1}L${x + 3.5} ${y1 - 5}" class="arr" data-s="${j}"/>`);
+    }
+    if (!st.q) { if (j === last) T.forEach(o => { if (o.r === row && row) { o.cls += ' rest'; o.t = o.t + ' f'; } }); return; }
+    const ps = String(st.prod), rs = String(st.r), m = st.c - ps.length;
+    tx(m, row + 1, '−', 'sub', j);
+    for (let k = 0; k < ps.length; k++) tx(m + 1 + k, row + 1, ps[k], 'sub', j);
+    out.push(`<path d="M${X(Math.min(m, start)) - CW / 2} ${Y(row + 1) + 9}H${X(st.c) + CW / 2}" class="ul" data-s="${j}"/>`);
+    row += 2;
+    for (let k = 0; k < rs.length; k++) tx(st.c - rs.length + 1 + k, row, rs[k], j === last ? 'rest' : '', t);
+    start = st.c - rs.length + 1;
+  });
+  for (const o of T) out.push(`<text x="${X(o.c)}" y="${Y(o.r)}"${o.cls ? ` class="${o.cls.trim()}"` : ''}${o.t != null ? ` data-s="${o.t}"` : ''}>${o.s}</text>`);
+  const rows = Math.max(row + 1, 2), qi = nInt - q0, bs = String(B), xV = X(cols - 1) + CW / 2 + 12;
+  const QX = k => xV + 14 + CW * (k + .5), wR = Math.max(bs.length, D.qd.length) * CW + 24;
+  out.push(`<path d="M${xV} ${Y(0) - FS - 4}V${Y(rows - 1) + 10}M${xV} ${Y(0) + 9}H${xV + wR}" class="pot"/>`);
+  for (let k = 0; k < bs.length; k++) out.push(`<text x="${QX(k)}" y="${Y(0)}">${bs[k]}</text>`);
+  D.qd.forEach((d, k) => out.push(`<text x="${QX(k)}" y="${Y(1) + 4}" class="quo" data-s="${Math.max(0, q0 + k - c0)} f">${d}</text>`));
+  if (end >= nInt) out.push(`<text x="${QX(qi) - CW / 2}" y="${Y(1) + 4}" class="quo" data-s="${Math.max(0, nInt - c0)} f">,</text>`);
+  const W = Math.ceil(xV + wR + 4), H = Math.ceil(Y(rows - 1) + 16), used = {};
+  steps.forEach((st, j) => { if (st.q) (used[st.q] = used[st.q] || []).push(j); });
+  return `<svg id="dvSvg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${out.join('')}</svg><div class="dv-tab">`
+    + Array.from({length:9}, (_, i) => `<div${used[i + 1] ? ` class="used" data-s="${used[i + 1].join(' ')}"` : ''}>${B} × ${i + 1} = <b>${B * (i + 1)}</b></div>`).join('') + '</div>';
+}
+/* Les étapes, en français : premier dividende partiel, chiffres abaissés, résultat et vérification. */
+function divText(D, a, b) {
+  const {B, nInt, N, steps, c0, dec, A, R, Q} = D, L = [], fr = s => s.replace('.', ',');
+  const RG = ['unités', 'dizaines', 'centaines', 'milliers', 'dizaines de milliers', 'centaines de milliers', 'millions', 'dizaines de millions', 'centaines de millions'];
+  const RD = ['dixièmes', 'centièmes', 'millièmes', 'dix-millièmes', 'cent-millièmes', 'millionièmes'];
+  const rang = c => { const p = nInt - 1 - c; return (p >= 0 ? RG[p] : RD[-p - 1]) || ''; };
+  const fois = st => st.q ? `En ${st.P}, combien de fois ${B} ? ${B} × ${st.q} = ${st.prod} et ${B} × ${st.q + 1} = ${st.prod + B} dépasse ${st.P} : ${st.q} fois. `
+    + `On écrit ${st.q} au quotient, puis ${st.P} − ${st.prod} = ${st.r}${st.r ? `, plus petit que ${B}` : ''}.`
+    : `En ${st.P}, combien de fois ${B} ? Aucune, ${st.P} est plus petit que ${B} : on écrit 0 au quotient.`;
+  if (D.k) L.push({t:'Rendre le diviseur entier', x:`Le diviseur ${fr(b)} a ${D.k} chiffre${D.k > 1 ? 's' : ''} après la virgule : on multiplie les deux nombres par ${10 ** D.k}. `
+    + `${fr(a)} ÷ ${fr(b)} devient ${A} ÷ ${B}, le quotient ne change pas.`});
+  const s0 = steps[0], nq = nInt - c0;
+  const x0 = c0 >= nInt ? `La partie entière, ${D.ds.slice(0, nInt)}, est plus petite que ${B} : le quotient commence par 0 et la virgule. On prolonge avec les chiffres suivants jusqu'à atteindre ${B} : ${s0.P} ${rang(c0)}. `
+    : (c0 ? `On prend le plus petit nombre formé par les premiers chiffres du dividende qui atteigne ${B} : ${s0.P}. ` : `Le premier chiffre, ${s0.P}, atteint déjà ${B} : on commence par lui. `)
+      + `Ce sont ${s0.P} ${rang(c0)} : le quotient aura ${nq > 1 ? nq + ' chiffres' : 'un seul chiffre'}${dec ? ' avant la virgule' : ''}. `;
+  L.push({t:'Premier chiffre du quotient', x:x0 + fois(s0), s:'0'});
+  steps.forEach((st, j) => {
+    if (!j) return;
+    const d = st.c < N ? D.ds[st.c] : '0', pr = steps[j - 1].r;
+    const x = st.c === nInt ? (st.c >= N ? `Plus de chiffre à abaisser, mais le reste n'est pas nul : on place la virgule au quotient et on abaisse un 0 : ${st.P}. `
+        : `On abaisse le ${d}, premier chiffre après la virgule : on place la virgule au quotient. On obtient ${st.P}. `)
+      : `On abaisse ${st.c >= N ? 'un 0' : 'le ' + d}${pr ? ' à côté de ' + pr + ' : ' + st.P : ' à côté du 0 : 0' + d + ', soit ' + st.P}. `;
+    L.push({t:st.c >= N ? 'On abaisse un 0' : 'On abaisse le ' + d, x:x + fois(st), s:'' + j});
+  });
+  const nd = D.end - nInt + 1, donc = D.k ? ` Donc ${fr(a)} ÷ ${fr(b)} ${R && dec ? '≈' : '='} ${Q}.` : '';
+  L.push({t:'Résultat', s:'f', x:!dec ? `Plus de chiffre à abaisser : le quotient est ${Q} et le reste ${R}${R ? `, plus petit que ${B}` : ', la division tombe juste'}. Vérification : ${B} × ${Q}${R ? ' + ' + R : ''} = ${A}.`
+    : !R ? `Le reste est nul, la division s'arrête : ${A} ÷ ${B} = ${Q}. Vérification : ${B} × ${Q} = ${A}.${donc}`
+    : `On s'arrête à ${nd} chiffre${nd > 1 ? 's' : ''} après la virgule : ${A} ÷ ${B} ≈ ${Q}.` + (D.per ? ` Le reste ${R} est déjà apparu : la suite ${D.per} se répète indéfiniment.` : '') + donc});
+  return L;
+}
+const dvEl = $('#divs');
+let divOpen = false, DV = null;
+function divShow(a, b) { // ouvert après une division posée à la main
+  const eu = !/\./.test(a + b) && +a >= +b, D = longDiv(a, b, !eu);
+  if (!D) return;
+  DV = {a, b, dec:!eu, seg:eu && D.R > 0};
+  divRender();
+  divOpen = true; dvEl.hidden = false; scrim.hidden = false;
+  void dvEl.offsetWidth;
+  dvEl.classList.add('open'); scrim.classList.add('open');
+  $('#dvBody').scrollTop = 0;
+}
+function divRender() {
+  const {a, b} = DV, D = longDiv(a, b, DV.dec), fr = s => s.replace('.', ','), fig = $('#dvFig');
+  $('#dvRes').innerHTML = `${fr(a)} ÷ ${fr(b)} ${D.dec && D.R ? '≈' : '='} <b>${D.Q}</b>` + (D.dec ? '' : ` reste <b>${D.R}</b>`);
+  $('#dvMode').hidden = !DV.seg;
+  for (const x of $('#dvMode').children) x.setAttribute('aria-checked', String(+x.dataset.m === +DV.dec));
+  fig.className = ''; fig.innerHTML = divFig(D);
+  $('#dvSteps').innerHTML = divText(D, a, b).map(s => `<li${s.s != null ? ` data-k="${s.s}"` : ''}><b>${s.t}</b><span>${s.x.replace(/ ([:?])/g, '\u202f$1').replace(/ ([−×÷=+≈]) /g, '\u00a0$1\u00a0')}</span></li>`).join(''); // espaces insécables : « 63 − 48 = 15 » d'un tenant
+  requestAnimationFrame(() => fig.classList.toggle('stick', fig.offsetHeight < .6 * $('#dvBody').clientHeight)); // la potence reste en vue tant qu'elle laisse la place aux étapes
+}
+function divClose() {
+  divOpen = false; dvEl.style.transform = '';
+  dvEl.classList.remove('open'); scrim.classList.remove('open');
+  setTimeout(() => { if (!divOpen) { dvEl.hidden = true; if (!convOpen) scrim.hidden = true; } }, 420);
+}
+$('#dvClose').addEventListener('click', divClose);
+$('#dvMode').addEventListener('click', ev => { const x = ev.target.closest('button'); if (!x || +x.dataset.m === +DV.dec) return; DV.dec = !!+x.dataset.m; divRender(); });
+$('#dvSteps').addEventListener('click', ev => { // une étape touchée s'éclaire sur la potence, les autres s'estompent
+  const li = ev.target.closest('li'); if (!li || li.dataset.k == null) return;
+  const on = !li.classList.contains('on'), fig = $('#dvFig'), k = li.dataset.k;
+  for (const x of $('#dvSteps').children) x.classList.toggle('on', on && x === li);
+  fig.classList.toggle('focus', on);
+  for (const e of fig.querySelectorAll('[data-s]')) e.classList.toggle('hl', on && e.dataset.s.split(' ').includes(k));
+  if (on && !fig.classList.contains('stick')) fig.scrollIntoView({block:'nearest', behavior:'smooth'});
+});
 
 /* Recherche tolérante : mots dans n'importe quel ordre, accents et mots vides ignorés, fautes de frappe admises */
 const STOP = new Set('le la les l de du des d un une et en au aux a pour par vers sur'.split(' '));
