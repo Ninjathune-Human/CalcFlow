@@ -105,7 +105,7 @@ svg.i{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke
 body.dragging,body.dragging *{cursor:grabbing!important}
 
 /* ---------- Clavier ---------- */
-#kbd{grid-area:kbd;display:flex;flex-direction:column;justify-content:flex-end;gap:var(--g,12px);padding:10px 16px 12px;min-height:0;min-width:0}
+#kbd{grid-area:kbd;touch-action:none;display:flex;flex-direction:column;justify-content:flex-end;gap:var(--g,12px);padding:10px 16px 12px;min-height:0;min-width:0}
 body.side #kbd{padding:12px 16px 16px 6px}
 .grid{display:grid;gap:var(--g,12px)}
 .grid.main{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(5,var(--rh,64px))}
@@ -114,7 +114,7 @@ body.side #kbd{padding:12px 16px 16px 6px}
 .grid.swap{animation:fade .16s var(--ease)}
 @keyframes fade{from{opacity:.25}}
 .key{container-type:size;position:relative;min-width:0;min-height:0;padding:0;border:0;border-radius:999px;display:grid;place-items:center;
-  background:var(--k);color:#fff;cursor:pointer;touch-action:manipulation;transition:background-color .42s var(--ease);
+  background:var(--k);color:#fff;cursor:pointer;touch-action:none;transition:background-color .42s var(--ease);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.1),inset 0 -1px 0 rgba(0,0,0,.35),0 0 0 .5px rgba(255,255,255,.05)}
 .key.on{background:var(--kon);transition:none}
 .key.num{--k:var(--k-num);--kon:var(--k-num-on)}
@@ -2260,6 +2260,37 @@ async function inkReco(sn, signal) {
   if (j[0] !== 'SUCCESS') throw new Error('reco');
   return j[1][0][1] || [];
 }
+/* Règle de trois : une grande croix, un nombre dans trois de ses cases et un x (ou rien) dans la quatrième.
+   Les produits en croix sont égaux (haut-gauche × bas-droite = haut-droite × bas-gauche) : x s'en déduit,
+   et le calcul s'écrit sur la feuille (par exemple 12 × 30 ÷ 4 = 90). Renvoie null s'il n'y a pas de croix. */
+function inkRule3(sn) {
+  if (sn.length < 5) return null;
+  const bb = sn.map(bboxOf), sz = bb.map(r => Math.max(r.w, r.h)).sort((a, b) => a - b), ref = sz[sz.length >> 1];
+  let H = -1, V = -1;
+  bb.forEach((r, i) => {
+    if (r.w >= 2.2 * ref && r.h <= .3 * r.w && (H < 0 || r.w > bb[H].w)) H = i; // trait horizontal, long
+    if (r.h >= 2.2 * ref && r.w <= .25 * r.h && (V < 0 || r.h > bb[V].h)) V = i; // trait vertical, long
+  });
+  if (H < 0 || V < 0) return null;
+  const h = bb[H], v = bb[V], X0 = v.cx, Y0 = h.cy;
+  if (X0 < h.x0 + .15 * h.w || X0 > h.x1 - .15 * h.w || Y0 < v.y0 + .15 * v.h || Y0 > v.y1 - .15 * v.h) return null; // les deux traits se croisent vers leur milieu
+  const q = [[], [], [], []]; // haut-gauche, haut-droite, bas-gauche, bas-droite
+  sn.forEach((st, i) => { if (i !== H && i !== V) q[(bb[i].cx < X0 ? 0 : 1) + (bb[i].cy < Y0 ? 0 : 2)].push(st); });
+  const rest = sn.filter((_, i) => i !== H && i !== V), R = HW.refSize(rest);
+  const read = sts => {
+    if (!sts.length) return {x:true, t:''};
+    const p = HW.classify(sts, R), px = p[HW.CL.indexOf('x')] + p[HW.CL.indexOf('×')], best = HW.CL[p.indexOf(Math.max(...p))];
+    if (sts.length <= 3 && (best === 'x' || best === '×' || px >= .35)) return {x:true, t:'x'};
+    const r = HW.recognize(sts); return r && validCalc(r.t) ? {t:r.t} : {t:'?'};
+  };
+  const c = q.map(read), unk = c.map((r, k) => r.x ? k : -1).filter(k => k >= 0);
+  const show = c.map(r => r.t || '·').join(' | ');
+  if (unk.length !== 1 || c.some(r => r.t === '?')) return {t:null, dbg:'règle de trois : ' + show + '\n(il faut trois nombres et un x)'};
+  const n = c.map(r => /^−?\d+(\.\d+)?$/.test(r.t) ? r.t : '(' + r.t + ')');
+  const [a, b, cc, d] = n, u = unk[0];
+  const t = u === 0 ? b + '×' + cc + '÷' + d : u === 1 ? a + '×' + d + '÷' + cc : u === 2 ? a + '×' + d + '÷' + b : b + '×' + cc + '÷' + a;
+  return {t, dbg:'règle de trois : ' + show + '\nlu : ' + t};
+}
 async function inkSend() {
   if (!strokes.length || pen) return;
   const sn = strokes.slice(), gen = ++sendGen;
@@ -2268,9 +2299,15 @@ async function inkSend() {
   penBtn.classList.add('busy');
   await new Promise(r => setTimeout(r, 30)); // l'écran se met à jour avant le calcul
   if (gen !== sendGen) return;
-  let txt = '', r = null;
+  let txt = '', r = null, r3 = null;
   const t0 = performance.now();
-  try { hwReady(); persSync(); r = HW.recognize(sn); } catch (e) { r = null; }
+  try { hwReady(); persSync(); r3 = inkRule3(sn); } catch (e) { r3 = null; }
+  if (r3) { // règle de trois dessinée
+    penBtn.classList.remove('busy'); dbg.last = r3.dbg; hudDraw(); inkClear(); penAt = -1e9;
+    if (r3.t) inkPlay(r3.t, x, y, y1); else penNope();
+    return;
+  }
+  try { r = HW.recognize(sn); } catch (e) { r = null; }
   penBtn.classList.remove('busy');
   if (r) { txt = r.t; dbg.last = 'symboles : ' + r.syms.join(' ') + '\nlu : ' + txt + (r.alt.length ? '\nsinon : ' + r.alt.join(' | ') : '') + '  (' + Math.round(performance.now() - t0) + ' ms)'; }
   try {
@@ -2640,23 +2677,34 @@ function tick(b) {
     src.start(t); src.stop(t + .03);
   } catch (e) {}
 }
+function commit(p) { clearTimeout(p.timer); p.b.classList.remove('on'); rebound(p.b); if (!p.long) pressKey(p.id); }
 kbd.addEventListener('pointerdown', ev => {
   const b = ev.target.closest('.key'); if (!b || ev.button > 0) return;
   ev.preventDefault();
-  press = {b, id:b.dataset.k, pid:ev.pointerId, long:false, x0:ev.clientX, y0:ev.clientY};
+  if (press) { // frappe enchaînée : la touche précédente compte, même si son relâcher n'est pas encore arrivé (ou s'est perdu)
+    const p = press; press = null;
+    if (p.swipe) { p.b.classList.remove('armed'); closeSwipe(p.b); } else commit(p);
+  }
+  press = {b, id:b.dataset.k, pid:ev.pointerId, long:false, x0:ev.clientX, y0:ev.clientY, t0:ev.timeStamp};
   b.classList.add('on'); squash(b); tick(b);
   try { b.setPointerCapture(ev.pointerId); } catch (e) {}
   if (press.id === 'back') press.timer = setTimeout(() => { if (press) { press.long = true; if (inkLive()) inkClear(); else edit(clearLine); } }, 450);
 });
 kbd.addEventListener('pointerup', ev => {
-  if (!press || ev.pointerId !== press.pid) return;
+  if (!press || ev.pointerId !== press.pid || ev.timeStamp < press.t0) return; // relâcher tardif d'une touche déjà comptée
   const p = press; press = null; clearTimeout(p.timer); p.b.classList.remove('on'); rebound(p.b);
   unlock(); // sur iPad, le son n'est autorisé qu'après un premier relâcher
   if (p.swipe) return endSwipe(p.b);
   const r = p.b.getBoundingClientRect();
   if (!p.long && ev.clientX >= r.left - 4 && ev.clientX <= r.right + 4 && ev.clientY >= r.top - 4 && ev.clientY <= r.bottom + 4) pressKey(p.id);
 });
-kbd.addEventListener('pointercancel', () => { if (press) { const p = press; clearTimeout(p.timer); p.b.classList.remove('on'); rebound(p.b); press = null; if (p.swipe) { p.b.classList.remove('armed'); closeSwipe(p.b); } } });
+kbd.addEventListener('pointercancel', ev => {
+  if (!press || ev.pointerId !== press.pid) return;
+  const p = press; press = null;
+  if (p.swipe) { clearTimeout(p.timer); p.b.classList.remove('on', 'armed'); rebound(p.b); closeSwipe(p.b); }
+  else if (ev.timeStamp - p.t0 < 500) commit(p); // un toucher bref repris par le navigateur reste une frappe
+  else { clearTimeout(p.timer); p.b.classList.remove('on'); rebound(p.b); }
+});
 /* ⌫ glissé vers la gauche : la touche part comme un volet sur un fond rouge ; au bout du geste, toute la feuille s'efface */
 kbd.addEventListener('pointermove', ev => {
   const p = press; if (!p || p.id !== 'back' || ev.pointerId !== p.pid) return;
